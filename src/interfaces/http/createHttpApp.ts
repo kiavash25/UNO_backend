@@ -63,7 +63,7 @@ function handleError(res: express.Response, e: unknown) {
 export function createHttpApp(deps: HttpAppDeps) {
   const { roomService, userService } = deps;
   const app = express();
-  app.use(cors());
+  app.use(cors({ origin: true, methods: ["GET", "POST", "PATCH", "OPTIONS"], allowedHeaders: ["Content-Type", "Authorization"] }));
   app.use(express.json());
 
   const auth = bearerAuth(userService);
