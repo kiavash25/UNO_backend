@@ -1,0 +1,12 @@
+/node_modules
+/dist
+# /package-lock.json
+# /package.json
+# /tsconfig.json
+# /tsconfig.node.json
+# /tsconfig.app.json
+# /tsconfig.spec.json
+# /tsconfig.json
+# /tsconfig.node.json
+# /tsconfig.app.json
+# /tsconfig.spec.json
