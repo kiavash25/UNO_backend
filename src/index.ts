@@ -25,6 +25,14 @@ async function main() {
   const hubRef: { hub?: WsHub } = {};
   const roomService = new RoomService(roomRepo, live, sessions, {
     onRoomChanged: (roomId) => hubRef.hub?.pushRoom(roomId),
+    onUnoDeclared: (roomId, playerId, displayName) => {
+      hubRef.hub?.broadcastEvent(roomId, {
+        type: "game.unoDeclared",
+        playerId,
+        displayName,
+        ts: Date.now(),
+      });
+    },
   });
   hubRef.hub = new WsHub(roomService);
 

@@ -22,6 +22,10 @@ const joinBody = z.object({
   displayName: z.string().min(1).max(32),
 });
 
+const quickPlayBody = z.object({
+  displayName: z.string().min(1).max(32),
+});
+
 const registerBody = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(128),
@@ -141,6 +145,25 @@ export function createHttpApp(deps: HttpAppDeps) {
       const body = joinBody.parse(req.body);
       const result = await roomService.joinRoom(body.code, body.displayName);
       res.status(200).json(result);
+    } catch (e) {
+      handleError(res, e);
+    }
+  });
+
+  app.get("/api/rooms/public", async (_req, res) => {
+    try {
+      const rooms = await roomService.listPublicRooms();
+      res.json({ rooms });
+    } catch (e) {
+      handleError(res, e);
+    }
+  });
+
+  app.post("/api/rooms/quick", async (req, res) => {
+    try {
+      const body = quickPlayBody.parse(req.body);
+      const result = await roomService.quickPlay(body.displayName);
+      res.status(result.created ? 201 : 200).json(result);
     } catch (e) {
       handleError(res, e);
     }

@@ -23,8 +23,19 @@ export type JoinRoomResult = {
   playerId: string;
 };
 
+export type PublicRoomSummary = {
+  code: string;
+  name: string;
+  maxPlayers: number;
+  currentPlayers: number;
+  phase: LiveRoomState["phase"];
+  mode: RoomSettings["mode"];
+  isPrivate: boolean;
+};
+
 export type RoomEvents = {
   onRoomChanged?: (roomId: string) => void;
+  onUnoDeclared?: (roomId: string, playerId: string, displayName: string) => void;
 };
 
 export class RoomService {
@@ -139,15 +150,53 @@ export class RoomService {
     return this.live.load(roomId);
   }
 
+  async listPublicRooms(): Promise<PublicRoomSummary[]> {
+    const ids = await this.live.listPublicLobbyRoomIds();
+    const results: PublicRoomSummary[] = [];
+
+    for (const id of ids) {
+      const state = await this.live.load(id);
+      if (!state) {
+        await this.live.removeFromPublicLobbyIndex(id);
+        continue;
+      }
+      if (state.settings.isPrivate || state.phase !== "lobby") continue;
+      if (state.players.length >= state.settings.maxPlayers) continue;
+
+      results.push({
+        code: state.code,
+        name: state.settings.name,
+        maxPlayers: state.settings.maxPlayers,
+        currentPlayers: state.players.length,
+        phase: state.phase,
+        mode: state.settings.mode,
+        isPrivate: false,
+      });
+    }
+
+    return results.sort((a, b) => b.currentPlayers - a.currentPlayers);
+  }
+
+  async quickPlay(
+    displayName: string,
+  ): Promise<(CreateRoomResult | JoinRoomResult) & { created: boolean }> {
+    const open = await this.listPublicRooms();
+    if (open.length > 0) {
+      const joined = await this.joinRoom(open[0]!.code, displayName);
+      return { ...joined, created: false };
+    }
+
+    const created = await this.createRoom(displayName, {
+      name: "بازی سریع",
+      maxPlayers: 4,
+      mode: "fast",
+      isPrivate: false,
+    });
+    return { ...created, created: true };
+  }
+
   /** اطلاعات عمومی اتاق برای لندینگ / بررسی قبل از ورود (بدون توکن). */
-  async getPublicByCode(code: string): Promise<{
-    code: string;
-    name: string;
-    maxPlayers: number;
-    currentPlayers: number;
-    phase: LiveRoomState["phase"];
-    mode: RoomSettings["mode"];
-  } | null> {
+  async getPublicByCode(code: string): Promise<PublicRoomSummary | null> {
     const upper = code.toUpperCase();
     let roomId = await this.live.findRoomIdByCode(upper);
     if (!roomId) {
@@ -165,6 +214,7 @@ export class RoomService {
         currentPlayers: live.players.length,
         phase: live.phase,
         mode: live.settings.mode,
+        isPrivate: live.settings.isPrivate,
       };
     }
 
@@ -177,7 +227,13 @@ export class RoomService {
       currentPlayers: 0,
       phase: "lobby",
       mode: mongo.mode,
+      isPrivate: mongo.isPrivate,
     };
+  }
+
+  private emitUnoDeclared(state: LiveRoomState, playerId: string): void {
+    const lobby = state.players.find((p) => p.id === playerId);
+    this.events.onUnoDeclared?.(state.id, playerId, lobby?.displayName ?? "بازیکن");
   }
 
   async setConnected(roomId: string, playerId: string, connected: boolean): Promise<void> {
@@ -245,6 +301,11 @@ export class RoomService {
     const res = playCard(game, sess.playerId, cardId, opts);
     if (!res.ok) throw new AppError(res.message, res.code);
 
+    if (opts?.declareUno) {
+      const pub = game.players.find((p) => p.id === sess.playerId);
+      if (pub?.saidUno) this.emitUnoDeclared(state, sess.playerId);
+    }
+
     if (game.status === "finished") state.phase = "finished";
     this.bump(state);
     await this.persist(state);
@@ -285,6 +346,7 @@ export class RoomService {
     const res = callUno(game, sess.playerId);
     if (!res.ok) throw new AppError(res.message, res.code);
 
+    this.emitUnoDeclared(state, sess.playerId);
     this.bump(state);
     await this.persist(state);
   }
