@@ -36,6 +36,7 @@ export type PublicRoomSummary = {
 export type RoomEvents = {
   onRoomChanged?: (roomId: string) => void;
   onUnoDeclared?: (roomId: string, playerId: string, displayName: string) => void;
+  onRoomDestroyed?: (roomId: string) => void;
 };
 
 export class RoomService {
@@ -245,6 +246,53 @@ export class RoomService {
     p.connected = connected;
     this.bump(state);
     await this.persist(state);
+  }
+
+  async handleDisconnect(roomId: string, playerId: string): Promise<void> {
+    const state = await this.live.load(roomId);
+    if (!state) return;
+
+    // Check if the disconnected player is the host
+    const isHost = state.hostId === playerId;
+    
+    // If host disconnects from a public room, destroy the room
+    if (isHost && !state.settings.isPrivate) {
+      await this.destroyRoom(roomId);
+      return;
+    }
+
+    // For non-host players in lobby phase, remove them from the room
+    if (!isHost && state.phase === "lobby") {
+      const playerIndex = state.players.findIndex((x) => x.id === playerId);
+      if (playerIndex !== -1) {
+        state.players.splice(playerIndex, 1);
+        this.bump(state);
+        await this.persist(state);
+      }
+      return;
+    }
+
+    // For host or players in playing/finished phase, just mark as disconnected
+    const p = state.players.find((x) => x.id === playerId);
+    if (!p) return;
+    if (p.connected === false) return;
+    p.connected = false;
+    this.bump(state);
+    await this.persist(state);
+  }
+
+  private async destroyRoom(roomId: string): Promise<void> {
+    const state = await this.live.load(roomId);
+    if (!state) return;
+
+    // Remove from public lobby index
+    await this.live.removeFromPublicLobbyIndex(roomId);
+    
+    // Delete the room from Redis
+    await this.live.delete(roomId);
+
+    // Notify all connected clients that the room is destroyed
+    this.events.onRoomDestroyed?.(roomId);
   }
 
   async setReady(token: string, ready: boolean): Promise<void> {

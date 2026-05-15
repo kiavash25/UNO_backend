@@ -43,4 +43,11 @@ export class LiveRoomStore {
   async findRoomIdByCode(code: string): Promise<string | null> {
     return this.redis.get(redisKeys.roomByCode(code.toUpperCase()));
   }
+
+  async delete(roomId: string): Promise<void> {
+    const state = await this.load(roomId);
+    if (state) {
+      await this.redis.del(redisKeys.liveRoom(roomId), redisKeys.roomByCode(state.code));
+    }
+  }
 }

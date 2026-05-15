@@ -34,6 +34,13 @@ export class WsHub {
   async authenticate(ws: WebSocket, token: string): Promise<boolean> {
     const sess = await this.rooms.session(token);
     if (!sess) return false;
+    
+    // Check if the player still exists in the room
+    const state = await this.rooms.getLive(sess.roomId);
+    if (!state) return false;
+    const playerExists = state.players.some((p) => p.id === sess.playerId);
+    if (!playerExists) return false;
+    
     const meta: SocketMeta = { roomId: sess.roomId, playerId: sess.playerId, token };
     this.sockets.set(ws, meta);
     this.addToRoom(sess.roomId, ws);
@@ -46,7 +53,7 @@ export class WsHub {
     if (!meta) return;
     this.sockets.delete(ws);
     this.removeFromRoom(meta.roomId, ws);
-    await this.rooms.setConnected(meta.roomId, meta.playerId, false);
+    await this.rooms.handleDisconnect(meta.roomId, meta.playerId);
   }
 
   pushRoom(roomId: string) {
@@ -73,6 +80,18 @@ export class WsHub {
       if (ws.readyState !== WebSocket.OPEN) continue;
       ws.send(raw);
     }
+  }
+
+  closeRoom(roomId: string) {
+    const set = this.byRoom.get(roomId);
+    if (!set) return;
+    const event = JSON.stringify({ type: "room.closed", message: "اتاق توسط میزبان بسته شد" });
+    for (const ws of set) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      ws.send(event);
+      ws.close();
+    }
+    this.byRoom.delete(roomId);
   }
 
   sendError(ws: WebSocket, code: string, message: string) {

@@ -33,6 +33,9 @@ async function main() {
         ts: Date.now(),
       });
     },
+    onRoomDestroyed: (roomId) => {
+      hubRef.hub?.closeRoom(roomId);
+    },
   });
   hubRef.hub = new WsHub(roomService);
 
