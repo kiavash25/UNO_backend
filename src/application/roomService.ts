@@ -248,19 +248,19 @@ export class RoomService {
     await this.persist(state);
   }
 
-  private async destroyRoom(roomId: string): Promise<void> {
-    const state = await this.live.load(roomId);
-    if (!state) return;
+//   private async destroyRoom(roomId: string): Promise<void> {
+//     const state = await this.live.load(roomId);
+//     if (!state) return;
 
-    // Remove from public lobby index
-    await this.live.removeFromPublicLobbyIndex(roomId);
+//     // Remove from public lobby index
+//     await this.live.removeFromPublicLobbyIndex(roomId);
     
-    // Delete the room from Redis
-    await this.live.delete(roomId);
+//     // Delete the room from Redis
+//     await this.live.delete(roomId);
 
-    // Notify all connected clients that the room is destroyed
-    this.events.onRoomDestroyed?.(roomId);
-  }
+//     // Notify all connected clients that the room is destroyed
+//     this.events.onRoomDestroyed?.(roomId);
+//   }
 
   async setReady(token: string, ready: boolean): Promise<void> {
     const sess = await this.sessions.get(token);
