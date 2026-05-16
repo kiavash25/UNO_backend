@@ -207,28 +207,16 @@ export class RoomService {
     }
 
     const live = await this.live.load(roomId);
-    if (live) {
-      return {
-        code: live.code,
-        name: live.settings.name,
-        maxPlayers: live.settings.maxPlayers,
-        currentPlayers: live.players.length,
-        phase: live.phase,
-        mode: live.settings.mode,
-        isPrivate: live.settings.isPrivate,
-      };
-    }
+    if (!live) return null;
 
-    const mongo = await this.rooms.findByCode(upper);
-    if (!mongo) return null;
     return {
-      code: mongo.code,
-      name: mongo.name,
-      maxPlayers: mongo.maxPlayers,
-      currentPlayers: 0,
-      phase: "lobby",
-      mode: mongo.mode,
-      isPrivate: mongo.isPrivate,
+      code: live.code,
+      name: live.settings.name,
+      maxPlayers: live.settings.maxPlayers,
+      currentPlayers: live.players.length,
+      phase: live.phase,
+      mode: live.settings.mode,
+      isPrivate: live.settings.isPrivate,
     };
   }
 
@@ -252,27 +240,6 @@ export class RoomService {
     const state = await this.live.load(roomId);
     if (!state) return;
 
-    // Check if the disconnected player is the host
-    const isHost = state.hostId === playerId;
-    
-    // If host disconnects from a public room, destroy the room
-    if (isHost && !state.settings.isPrivate) {
-      await this.destroyRoom(roomId);
-      return;
-    }
-
-    // For non-host players in lobby phase, remove them from the room
-    if (!isHost && state.phase === "lobby") {
-      const playerIndex = state.players.findIndex((x) => x.id === playerId);
-      if (playerIndex !== -1) {
-        state.players.splice(playerIndex, 1);
-        this.bump(state);
-        await this.persist(state);
-      }
-      return;
-    }
-
-    // For host or players in playing/finished phase, just mark as disconnected
     const p = state.players.find((x) => x.id === playerId);
     if (!p) return;
     if (p.connected === false) return;

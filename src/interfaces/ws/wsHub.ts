@@ -45,6 +45,7 @@ export class WsHub {
     this.sockets.set(ws, meta);
     this.addToRoom(sess.roomId, ws);
     await this.rooms.setConnected(sess.roomId, sess.playerId, true);
+    this.pushRoom(sess.roomId);
     return true;
   }
 
