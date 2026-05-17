@@ -26,6 +26,11 @@ const quickPlayBody = z.object({
   displayName: z.string().min(1).max(32),
 });
 
+const botMatchBody = z.object({
+  displayName: z.string().min(1).max(32),
+  totalPlayers: z.number().int().min(2).max(4),
+});
+
 const registerBody = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(128),
@@ -164,6 +169,16 @@ export function createHttpApp(deps: HttpAppDeps) {
       const body = quickPlayBody.parse(req.body);
       const result = await roomService.quickPlay(body.displayName);
       res.status(result.created ? 201 : 200).json(result);
+    } catch (e) {
+      handleError(res, e);
+    }
+  });
+
+  app.post("/api/rooms/bot-match", async (req, res) => {
+    try {
+      const body = botMatchBody.parse(req.body);
+      const result = await roomService.createBotMatch(body.displayName, body.totalPlayers);
+      res.status(201).json(result);
     } catch (e) {
       handleError(res, e);
     }

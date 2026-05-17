@@ -1,4 +1,10 @@
-import { startNewGame, playCard, drawCard, passAfterDraw, callUno } from "../domain/uno/gameEngine.js";
+﻿import {
+  startNewGame,
+  playCard,
+  drawCard,
+  passAfterDraw,
+  callUno,
+} from "../domain/uno/gameEngine.js";
 import { RoomRepository } from "../infrastructure/mongo/roomRepository.js";
 import { LiveRoomStore } from "../infrastructure/redis/liveRoomStore.js";
 import { SessionStore } from "../infrastructure/redis/sessionStore.js";
@@ -8,6 +14,7 @@ import { generateRoomCode } from "./roomCode.js";
 import type { LobbyPlayer, RoomSettings } from "./roomTypes.js";
 import { AppError } from "./errors.js";
 import { newPlayerId, newPlayerToken, type SessionPayload } from "./session.js";
+import { cardMatchesTop, isWild, type UnoCard } from "../domain/uno/card.js";
 
 export type CreateRoomResult = {
   roomId: string;
@@ -22,6 +29,8 @@ export type JoinRoomResult = {
   playerToken: string;
   playerId: string;
 };
+
+export type BotMatchResult = CreateRoomResult;
 
 export type PublicRoomSummary = {
   code: string;
@@ -40,6 +49,20 @@ export type RoomEvents = {
 };
 
 export class RoomService {
+  private readonly botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly botNames = [
+    "آوا",
+    "پارسا",
+    "نیما",
+    "ترانه",
+    "آرین",
+    "هلیا",
+    "مانی",
+    "دینا",
+    "سروش",
+    "روژین",
+  ];
+
   constructor(
     private readonly rooms: RoomRepository,
     private readonly live: LiveRoomStore,
@@ -54,6 +77,122 @@ export class RoomService {
   private async persist(state: LiveRoomState): Promise<void> {
     await this.live.save(state);
     this.events.onRoomChanged?.(state.id);
+    this.scheduleBotTurn(state.id);
+  }
+
+  private clearBotTimer(roomId: string): void {
+    const pending = this.botTurnTimers.get(roomId);
+    if (pending) clearTimeout(pending);
+    this.botTurnTimers.delete(roomId);
+  }
+
+  private chooseBotCard(state: NonNullable<LiveRoomState["game"]>, playerId: string): UnoCard | null {
+    const hand = state.hands[playerId] ?? [];
+    const top = state.discardPile[state.discardPile.length - 1];
+    if (!top) return null;
+    const legal = hand.filter((c) => cardMatchesTop(c, top, state.currentColor));
+    if (!legal.length) return null;
+
+    legal.sort((a, b) => {
+      const aWild = isWild(a) ? 1 : 0;
+      const bWild = isWild(b) ? 1 : 0;
+      if (aWild !== bWild) return aWild - bWild;
+      if (a.rank === "skip" || a.rank === "reverse" || a.rank === "draw2") return -1;
+      if (b.rank === "skip" || b.rank === "reverse" || b.rank === "draw2") return 1;
+      return 0;
+    });
+
+    const idx = Math.min(legal.length - 1, Math.floor(Math.random() * Math.min(2, legal.length)));
+    return legal[idx] ?? legal[0] ?? null;
+  }
+
+  private chooseWildColor(state: NonNullable<LiveRoomState["game"]>, playerId: string): "red" | "yellow" | "green" | "blue" {
+    const hand = state.hands[playerId] ?? [];
+    const counts: Record<"red" | "yellow" | "green" | "blue", number> = {
+      red: 0,
+      yellow: 0,
+      green: 0,
+      blue: 0,
+    };
+    for (const c of hand) {
+      if (c.color === "black") continue;
+      counts[c.color] += 1;
+    }
+    return (Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] as "red" | "yellow" | "green" | "blue") ?? "red";
+  }
+
+  private scheduleBotTurn(roomId: string): void {
+    this.clearBotTimer(roomId);
+    void (async () => {
+      const state = await this.live.load(roomId);
+      if (!state || state.phase !== "playing" || !state.game) return;
+      const game = state.game;
+      const active = game.players[game.turnIndex];
+      if (!active) return;
+      const lobbyPlayer = state.players.find((p) => p.id === active.id);
+      if (!lobbyPlayer?.isBot) return;
+
+      const base = state.settings.mode === "fast" ? 700 : 1100;
+      const extra = state.settings.mode === "fast" ? 1600 : 2800;
+      const delayMs = base + Math.floor(Math.random() * extra);
+      const lockedVersion = state.version;
+
+      const timer = setTimeout(() => {
+        void this.runBotTurn(roomId, active.id, lockedVersion);
+      }, delayMs);
+
+      this.botTurnTimers.set(roomId, timer);
+    })();
+  }
+
+  private async runBotTurn(roomId: string, botId: string, expectedVersion: number): Promise<void> {
+    this.botTurnTimers.delete(roomId);
+    const state = await this.live.load(roomId);
+    if (!state || state.phase !== "playing" || !state.game) return;
+    if (state.version !== expectedVersion) return;
+    const game = state.game;
+    const active = game.players[game.turnIndex];
+    if (!active || active.id !== botId) return;
+    const lobby = state.players.find((p) => p.id === botId);
+    if (!lobby?.isBot) return;
+
+    const picked = this.chooseBotCard(game, botId);
+    if (picked) {
+      const shouldSayUno = (game.hands[botId]?.length ?? 0) === 2 && Math.random() > 0.12;
+      const res = playCard(game, botId, picked.id, {
+        chosenColor: picked.color === "black" ? this.chooseWildColor(game, botId) : undefined,
+        declareUno: shouldSayUno,
+      });
+      if (!res.ok) return;
+      if (shouldSayUno) this.emitUnoDeclared(state, botId);
+      if (game.status === "finished") state.phase = "finished";
+      this.bump(state);
+      await this.persist(state);
+      return;
+    }
+
+    const drawRes = drawCard(game, botId);
+    if (!drawRes.ok) return;
+    const afterDraw = this.chooseBotCard(game, botId);
+    const shouldPlayAfterDraw = !!afterDraw && Math.random() > 0.38;
+    if (shouldPlayAfterDraw && afterDraw) {
+      const shouldSayUno = (game.hands[botId]?.length ?? 0) === 2 && Math.random() > 0.12;
+      const playRes = playCard(game, botId, afterDraw.id, {
+        chosenColor: afterDraw.color === "black" ? this.chooseWildColor(game, botId) : undefined,
+        declareUno: shouldSayUno,
+      });
+      if (!playRes.ok) return;
+      if (shouldSayUno) this.emitUnoDeclared(state, botId);
+      if (game.status === "finished") state.phase = "finished";
+      this.bump(state);
+      await this.persist(state);
+      return;
+    }
+
+    const passRes = passAfterDraw(game, botId);
+    if (!passRes.ok) return;
+    this.bump(state);
+    await this.persist(state);
   }
 
   private defaultSettings(partial: Partial<RoomSettings> & Pick<RoomSettings, "name">): RoomSettings {
@@ -194,6 +333,46 @@ export class RoomService {
       isPrivate: false,
     });
     return { ...created, created: true };
+  }
+
+  async createBotMatch(displayName: string, totalPlayers: number): Promise<BotMatchResult> {
+    if (totalPlayers < 2 || totalPlayers > 4) {
+      throw new AppError("تعداد بازیکن باید بین ۲ تا ۴ باشد", "bad_settings");
+    }
+
+    const created = await this.createRoom(displayName, {
+      name: "بازی با بات",
+      maxPlayers: totalPlayers,
+      mode: "classic",
+      isPrivate: true,
+    });
+
+    const state = await this.live.load(created.roomId);
+    if (!state) throw new AppError("اتاق پیدا نشد", "not_found", 404);
+
+    const existing = new Set(state.players.map((p) => p.displayName));
+    const botsNeeded = totalPlayers - 1;
+    for (let i = 0; i < botsNeeded; i++) {
+      const botId = newPlayerId();
+      let baseName = this.botNames[Math.floor(Math.random() * this.botNames.length)] ?? `Bot${i + 1}`;
+      while (existing.has(baseName)) {
+        baseName = `${baseName}${Math.floor(10 + Math.random() * 90)}`;
+      }
+      existing.add(baseName);
+      state.players.push({
+        id: botId,
+        displayName: baseName,
+        isHost: false,
+        isBot: true,
+        ready: true,
+        connected: true,
+      });
+    }
+    this.bump(state);
+    await this.persist(state);
+    await this.startGame(created.playerToken);
+
+    return created;
   }
 
   /** اطلاعات عمومی اتاق برای لندینگ / بررسی قبل از ورود (بدون توکن). */
@@ -390,3 +569,4 @@ export function clientRoomView(state: LiveRoomState, viewerId: string) {
     game: state.game ? projectGameStateForPlayer(state.game, viewerId) : null,
   };
 }
+

@@ -13,6 +13,7 @@ export type LobbyPlayer = {
   id: string;
   displayName: string;
   isHost: boolean;
+  isBot?: boolean;
   ready: boolean;
   connected: boolean;
 };
