@@ -18,8 +18,16 @@ export type UserPatch = Partial<
 >;
 
 export class UserRepository {
+  async prepareIndexes(): Promise<void> {
+    await UserModel.collection.dropIndex("email_1").catch((err: unknown) => {
+      const codeName = typeof err === "object" && err !== null && "codeName" in err ? String(err.codeName) : "";
+      if (codeName !== "IndexNotFound") throw err;
+    });
+    await UserModel.createIndexes();
+  }
+
   async create(data: {
-    email: string;
+    phone: string;
     passwordHash: string;
     displayName: string;
     avatar: string;
@@ -30,12 +38,12 @@ export class UserRepository {
     return u;
   }
 
-  async findByEmail(email: string): Promise<UserDoc | null> {
-    return UserModel.findOne({ email: email.toLowerCase().trim() }).lean<UserDoc>().exec();
+  async findByPhone(phone: string): Promise<UserDoc | null> {
+    return UserModel.findOne({ phone: phone.trim() }).lean<UserDoc>().exec();
   }
 
-  async findForLogin(email: string): Promise<(UserDoc & { passwordHash: string }) | null> {
-    return UserModel.findOne({ email: email.toLowerCase().trim() })
+  async findForLogin(phone: string): Promise<(UserDoc & { passwordHash: string }) | null> {
+    return UserModel.findOne({ phone: phone.trim() })
       .select("+passwordHash")
       .lean<UserDoc & { passwordHash: string }>()
       .exec();

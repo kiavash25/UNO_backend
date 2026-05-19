@@ -13,7 +13,7 @@ import {
 
 export type PublicProfile = {
   id: string;
-  email: string;
+  phone: string;
   displayName: string;
   avatar: string;
   xp: number;
@@ -36,7 +36,7 @@ export class UserService {
     private readonly bcryptCost: number,
   ) {}
 
-  verifyAccessToken(token: string): Promise<{ userId: string; email: string }> {
+  verifyAccessToken(token: string): Promise<{ userId: string; phone: string }> {
     return this.jwt.verifyAccessToken(token);
   }
 
@@ -44,7 +44,7 @@ export class UserService {
     const { xpIntoLevel, xpForNextLevel, level } = xpProgress(user.xp);
     return {
       id: String(user._id),
-      email: user.email,
+      phone: user.phone,
       displayName: user.displayName,
       avatar: user.avatar,
       xp: user.xp,
@@ -61,34 +61,34 @@ export class UserService {
     };
   }
 
-  async register(email: string, password: string, displayName: string): Promise<{ token: string; user: PublicProfile }> {
-    const exists = await this.users.findByEmail(email);
-    if (exists) throw new AppError("این ایمیل قبلاً ثبت شده است", "email_taken", 409);
+  async register(phone: string, password: string, displayName: string): Promise<{ token: string; user: PublicProfile }> {
+    const exists = await this.users.findByPhone(phone);
+    if (exists) throw new AppError("این شماره تلفن قبلاً ثبت شده است", "phone_taken", 409);
 
     const passwordHash = await bcrypt.hash(password, this.bcryptCost);
     const avatar = AVATAR_OPTIONS[0]!;
     const doc = await this.users.create({
-      email: email.toLowerCase().trim(),
+      phone: phone.trim(),
       passwordHash,
       displayName: displayName.trim(),
       avatar,
     });
 
-    const token = await this.jwt.signAccessToken(String(doc._id), doc.email);
+    const token = await this.jwt.signAccessToken(String(doc._id), doc.phone);
     return { token, user: this.toPublic(doc) };
   }
 
-  async login(email: string, password: string): Promise<{ token: string; user: PublicProfile }> {
-    const doc = await this.users.findForLogin(email);
-    if (!doc) throw new AppError("ایمیل یا رمز اشتباه است", "invalid_credentials", 401);
+  async login(phone: string, password: string): Promise<{ token: string; user: PublicProfile }> {
+    const doc = await this.users.findForLogin(phone);
+    if (!doc) throw new AppError("شماره تلفن یا رمز اشتباه است", "invalid_credentials", 401);
 
     const ok = await bcrypt.compare(password, doc.passwordHash);
-    if (!ok) throw new AppError("ایمیل یا رمز اشتباه است", "invalid_credentials", 401);
+    if (!ok) throw new AppError("شماره تلفن یا رمز اشتباه است", "invalid_credentials", 401);
 
     const full = await this.users.findById(String(doc._id));
     if (!full) throw new AppError("کاربر پیدا نشد", "not_found", 404);
 
-    const token = await this.jwt.signAccessToken(String(full._id), full.email);
+    const token = await this.jwt.signAccessToken(String(full._id), full.phone);
     return { token, user: this.toPublic(full) };
   }
 

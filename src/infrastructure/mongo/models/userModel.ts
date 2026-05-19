@@ -2,7 +2,7 @@ import mongoose, { Schema } from "mongoose";
 
 export type UserDoc = {
   _id: mongoose.Types.ObjectId;
-  email: string;
+  phone: string;
   passwordHash: string;
   displayName: string;
   avatar: string;
@@ -20,7 +20,7 @@ export type UserDoc = {
 
 const userSchema = new Schema<UserDoc>(
   {
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+    phone: { type: String, required: true, unique: true, trim: true, index: true },
     passwordHash: { type: String, required: true, select: false },
     displayName: { type: String, required: true, trim: true },
     avatar: { type: String, required: true, default: "🦊" },

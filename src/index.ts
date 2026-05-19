@@ -41,6 +41,7 @@ async function main() {
 
   const jwt = createJwtService(env.JWT_SECRET, env.JWT_EXPIRES_IN_SEC);
   const userRepo = new UserRepository();
+  await userRepo.prepareIndexes();
   const userService = new UserService(userRepo, jwt, env.BCRYPT_COST);
 
   const app = createHttpApp({ roomService, userService });
