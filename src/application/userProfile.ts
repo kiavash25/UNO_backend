@@ -1,5 +1,6 @@
 /** آواتارهای پیش‌فرض (هم‌نام با فرانت). */
-export const AVATAR_OPTIONS = ["🦊", "🐼", "🐯", "🐸", "🦁", "🐻", "🐨", "🦄"] as const;
+
+import { AVATAR_OPTIONS } from "../constant/avatar.cons.js";
 
 export type AvatarId = (typeof AVATAR_OPTIONS)[number];
 

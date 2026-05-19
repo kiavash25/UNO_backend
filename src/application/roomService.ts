@@ -15,6 +15,7 @@ import type { LobbyPlayer, RoomSettings } from "./roomTypes.js";
 import { AppError } from "./errors.js";
 import { newPlayerId, newPlayerToken, type SessionPayload } from "./session.js";
 import { cardMatchesTop, isWild, type UnoCard } from "../domain/uno/card.js";
+import { AVATAR_OPTIONS } from "../constant/avatar.cons.js";
 
 export type CreateRoomResult = {
   roomId: string;
@@ -62,6 +63,7 @@ export class RoomService {
     "سروش",
     "روژین",
   ];
+  private readonly botAvatars = AVATAR_OPTIONS;
 
   constructor(
     private readonly rooms: RoomRepository,
@@ -205,7 +207,7 @@ export class RoomService {
     };
   }
 
-  async createRoom(hostDisplayName: string, input: Partial<RoomSettings> & { name: string }): Promise<CreateRoomResult> {
+  async createRoom(hostDisplayName: string, avatar: string | undefined, input: Partial<RoomSettings> & { name: string }): Promise<CreateRoomResult> {
     const settings = this.defaultSettings(input);
     if (settings.maxPlayers < 2 || settings.maxPlayers > 10) {
       throw new AppError("حداکثر بازیکن باید بین ۲ تا ۱۰ باشد", "bad_settings");
@@ -225,6 +227,7 @@ export class RoomService {
     const host: LobbyPlayer = {
       id: hostId,
       displayName: hostDisplayName,
+      avatar,
       isHost: true,
       ready: true,
       connected: false,
@@ -248,7 +251,7 @@ export class RoomService {
     return { roomId, code, playerToken, playerId: hostId };
   }
 
-  async joinRoom(codeRaw: string, displayName: string): Promise<JoinRoomResult> {
+  async joinRoom(codeRaw: string, displayName: string, avatar?: string): Promise<JoinRoomResult> {
     const code = codeRaw.toUpperCase();
     let roomId = await this.live.findRoomIdByCode(code);
     if (!roomId) {
@@ -268,6 +271,7 @@ export class RoomService {
     const player: LobbyPlayer = {
       id: playerId,
       displayName,
+      avatar,
       isHost: false,
       ready: false,
       connected: false,
@@ -319,14 +323,15 @@ export class RoomService {
 
   async quickPlay(
     displayName: string,
+    avatar?: string,
   ): Promise<(CreateRoomResult | JoinRoomResult) & { created: boolean }> {
     const open = await this.listPublicRooms();
     if (open.length > 0) {
-      const joined = await this.joinRoom(open[0]!.code, displayName);
+      const joined = await this.joinRoom(open[0]!.code, displayName, avatar);
       return { ...joined, created: false };
     }
 
-    const created = await this.createRoom(displayName, {
+    const created = await this.createRoom(displayName, avatar, {
       name: "بازی سریع",
       maxPlayers: 4,
       mode: "fast",
@@ -335,12 +340,12 @@ export class RoomService {
     return { ...created, created: true };
   }
 
-  async createBotMatch(displayName: string, totalPlayers: number): Promise<BotMatchResult> {
+  async createBotMatch(displayName: string, totalPlayers: number, avatar?: string): Promise<BotMatchResult> {
     if (totalPlayers < 2 || totalPlayers > 4) {
       throw new AppError("تعداد بازیکن باید بین ۲ تا ۴ باشد", "bad_settings");
     }
 
-    const created = await this.createRoom(displayName, {
+    const created = await this.createRoom(displayName, avatar, {
       name: "بازی با بات",
       maxPlayers: totalPlayers,
       mode: "classic",
@@ -362,6 +367,7 @@ export class RoomService {
       state.players.push({
         id: botId,
         displayName: baseName,
+        avatar: this.botAvatars[i % this.botAvatars.length],
         isHost: false,
         isBot: true,
         ready: true,
@@ -474,7 +480,7 @@ export class RoomService {
     const notReady = state.players.filter((p) => !p.ready);
     if (notReady.length) throw new AppError("همه باید آماده باشند", "not_ready");
 
-    const roster = state.players.map((p) => ({ id: p.id, displayName: p.displayName }));
+    const roster = state.players.map((p) => ({ id: p.id, displayName: p.displayName, avatar: p.avatar }));
     const game = startNewGame(roster);
     state.game = game;
     state.phase = "playing";

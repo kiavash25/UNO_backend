@@ -9,6 +9,7 @@ export type UnoGameStatus = "playing" | "finished";
 export type UnoPublicPlayer = {
   id: PlayerId;
   displayName: string;
+  avatar?: string;
   handCount: number;
   saidUno: boolean;
 };

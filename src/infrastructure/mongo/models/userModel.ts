@@ -23,7 +23,7 @@ const userSchema = new Schema<UserDoc>(
     phone: { type: String, required: true, unique: true, trim: true, index: true },
     passwordHash: { type: String, required: true, select: false },
     displayName: { type: String, required: true, trim: true },
-    avatar: { type: String, required: true, default: "🦊" },
+    avatar: { type: String, required: true, default: "/img/avatars/avatar_1.png" },
     xp: { type: Number, default: 0 },
     level: { type: Number, default: 1 },
     coins: { type: Number, default: 100 },

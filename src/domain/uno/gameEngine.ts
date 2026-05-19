@@ -62,7 +62,7 @@ function syncPublicPlayers(state: UnoGameState): void {
 }
 
 export function startNewGame(
-  roster: { id: PlayerId; displayName: string }[],
+  roster: { id: PlayerId; displayName: string; avatar?: string }[],
 ): UnoGameState {
   if (roster.length < 2 || roster.length > 10) {
     throw new Error("player count must be 2..10");
@@ -99,6 +99,7 @@ export function startNewGame(
   const players: UnoPublicPlayer[] = roster.map((p) => ({
     id: p.id,
     displayName: p.displayName,
+    avatar: p.avatar,
     handCount: hands[p.id]!.length,
     saidUno: false,
   }));

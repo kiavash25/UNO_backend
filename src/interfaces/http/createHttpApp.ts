@@ -8,6 +8,7 @@ import { bearerAuth } from "./authMiddleware.js";
 
 const createRoomBody = z.object({
   hostDisplayName: z.string().min(1).max(32),
+  avatar: z.string().min(1).max(128).optional(),
   name: z.string().min(1).max(64),
   maxPlayers: z.number().int().min(2).max(10).optional(),
   mode: z.enum(["classic", "fast"]).optional(),
@@ -20,14 +21,17 @@ const joinBody = z.object({
     .length(4)
     .transform((s) => s.toUpperCase()),
   displayName: z.string().min(1).max(32),
+  avatar: z.string().min(1).max(128).optional(),
 });
 
 const quickPlayBody = z.object({
   displayName: z.string().min(1).max(32),
+  avatar: z.string().min(1).max(128).optional(),
 });
 
 const botMatchBody = z.object({
   displayName: z.string().min(1).max(32),
+  avatar: z.string().min(1).max(128).optional(),
   totalPlayers: z.number().int().min(2).max(4),
 });
 
@@ -53,6 +57,7 @@ const registerBody = z.object({
   phone: phoneSchema,
   password: z.string().min(8).max(128),
   displayName: z.string().min(1).max(32),
+  avatar: z.string().min(1).max(128).optional(),
 });
 
 const loginBody = z.object({
@@ -62,7 +67,7 @@ const loginBody = z.object({
 
 const patchMeBody = z.object({
   displayName: z.string().min(1).max(32).optional(),
-  avatar: z.string().min(1).max(8).optional(),
+  avatar: z.string().min(1).max(128).optional(),
 });
 
 const matchBody = z.object({
@@ -102,7 +107,7 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.post("/api/auth/register", async (req, res) => {
     try {
       const body = registerBody.parse(req.body);
-      const out = await userService.register(body.phone, body.password, body.displayName);
+      const out = await userService.register(body.phone, body.password, body.displayName, body.avatar);
       res.status(201).json(out);
     } catch (e) {
       handleError(res, e);
@@ -151,7 +156,7 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.post("/api/rooms", async (req, res) => {
     try {
       const body = createRoomBody.parse(req.body);
-      const result = await roomService.createRoom(body.hostDisplayName, {
+      const result = await roomService.createRoom(body.hostDisplayName, body.avatar, {
         name: body.name,
         maxPlayers: body.maxPlayers,
         mode: body.mode,
@@ -166,7 +171,7 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.post("/api/rooms/join", async (req, res) => {
     try {
       const body = joinBody.parse(req.body);
-      const result = await roomService.joinRoom(body.code, body.displayName);
+      const result = await roomService.joinRoom(body.code, body.displayName, body.avatar);
       res.status(200).json(result);
     } catch (e) {
       handleError(res, e);
@@ -185,7 +190,7 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.post("/api/rooms/quick", async (req, res) => {
     try {
       const body = quickPlayBody.parse(req.body);
-      const result = await roomService.quickPlay(body.displayName);
+      const result = await roomService.quickPlay(body.displayName, body.avatar);
       res.status(result.created ? 201 : 200).json(result);
     } catch (e) {
       handleError(res, e);
@@ -195,7 +200,7 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.post("/api/rooms/bot-match", async (req, res) => {
     try {
       const body = botMatchBody.parse(req.body);
-      const result = await roomService.createBotMatch(body.displayName, body.totalPlayers);
+      const result = await roomService.createBotMatch(body.displayName, body.totalPlayers, body.avatar);
       res.status(201).json(result);
     } catch (e) {
       handleError(res, e);

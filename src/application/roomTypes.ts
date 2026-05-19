@@ -12,6 +12,7 @@ export type RoomSettings = {
 export type LobbyPlayer = {
   id: string;
   displayName: string;
+  avatar?: string;
   isHost: boolean;
   isBot?: boolean;
   ready: boolean;

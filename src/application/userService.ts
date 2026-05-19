@@ -4,12 +4,12 @@ import type { UserDoc } from "../infrastructure/mongo/models/userModel.js";
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
 import { AppError } from "./errors.js";
 import {
-  AVATAR_OPTIONS,
   isAllowedAvatar,
   levelFromXp,
   rankTitleForLevel,
   xpProgress,
 } from "./userProfile.js";
+import { AVATAR_OPTIONS } from "../constant/avatar.cons.js";
 
 export type PublicProfile = {
   id: string;
@@ -61,12 +61,13 @@ export class UserService {
     };
   }
 
-  async register(phone: string, password: string, displayName: string): Promise<{ token: string; user: PublicProfile }> {
+  async register(phone: string, password: string, displayName: string, avatarId?: string): Promise<{ token: string; user: PublicProfile }> {
     const exists = await this.users.findByPhone(phone);
     if (exists) throw new AppError("این شماره تلفن قبلاً ثبت شده است", "phone_taken", 409);
+    if (avatarId !== undefined && !isAllowedAvatar(avatarId)) throw new AppError("آواتار نامعتبر است", "bad_avatar");
 
     const passwordHash = await bcrypt.hash(password, this.bcryptCost);
-    const avatar = AVATAR_OPTIONS[0]!;
+    const avatar = avatarId ?? AVATAR_OPTIONS[0]!;
     const doc = await this.users.create({
       phone: phone.trim(),
       passwordHash,
