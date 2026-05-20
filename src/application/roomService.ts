@@ -220,6 +220,9 @@ export class RoomService {
       if (!exists) break;
       code = generateRoomCode();
     }
+    if (settings.name === "__ROOM_CODE__") {
+      settings.name = code;
+    }
 
     const mongo = await this.rooms.create({ code, hostPlayerId: hostId, settings });
     const roomId = String(mongo._id);
@@ -476,9 +479,6 @@ export class RoomService {
     if (state.phase !== "lobby") throw new AppError("بازی از قبل شروع شده", "bad_phase");
 
     if (state.players.length < 2) throw new AppError("حداقل دو بازیکن لازم است", "not_enough");
-
-    const notReady = state.players.filter((p) => !p.ready);
-    if (notReady.length) throw new AppError("همه باید آماده باشند", "not_ready");
 
     const roster = state.players.map((p) => ({ id: p.id, displayName: p.displayName, avatar: p.avatar }));
     const game = startNewGame(roster);
