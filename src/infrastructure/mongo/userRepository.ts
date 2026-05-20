@@ -14,6 +14,7 @@ export type UserPatch = Partial<
     | "winStreak"
     | "bestWinStreak"
     | "accuracyPct"
+    | "passwordHash"
   >
 >;
 
@@ -44,6 +45,13 @@ export class UserRepository {
 
   async findForLogin(phone: string): Promise<(UserDoc & { passwordHash: string }) | null> {
     return UserModel.findOne({ phone: phone.trim() })
+      .select("+passwordHash")
+      .lean<UserDoc & { passwordHash: string }>()
+      .exec();
+  }
+
+  async findForLoginById(id: string): Promise<(UserDoc & { passwordHash: string }) | null> {
+    return UserModel.findById(id)
       .select("+passwordHash")
       .lean<UserDoc & { passwordHash: string }>()
       .exec();

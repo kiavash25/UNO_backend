@@ -70,6 +70,11 @@ const patchMeBody = z.object({
   avatar: z.string().min(1).max(128).optional(),
 });
 
+const changePasswordBody = z.object({
+  currentPassword: z.string().min(1).max(128),
+  nextPassword: z.string().min(8).max(128),
+});
+
 const matchBody = z.object({
   won: z.boolean(),
 });
@@ -138,6 +143,16 @@ export function createHttpApp(deps: HttpAppDeps) {
       const body = patchMeBody.parse(req.body);
       const u = await userService.updateProfile(req.authed!.userId, body);
       res.json(u);
+    } catch (e) {
+      handleError(res, e);
+    }
+  });
+
+  app.patch("/api/me/password", auth, async (req, res) => {
+    try {
+      const body = changePasswordBody.parse(req.body);
+      await userService.changePassword(req.authed!.userId, body.currentPassword, body.nextPassword);
+      res.json({ ok: true });
     } catch (e) {
       handleError(res, e);
     }

@@ -27,6 +27,7 @@ export type PublicProfile = {
   winStreak: number;
   bestWinStreak: number;
   accuracyPct: number;
+  createdAt: Date;
 };
 
 export class UserService {
@@ -58,6 +59,7 @@ export class UserService {
       winStreak: user.winStreak,
       bestWinStreak: user.bestWinStreak,
       accuracyPct: user.accuracyPct,
+      createdAt: user.createdAt,
     };
   }
 
@@ -122,6 +124,22 @@ export class UserService {
     const next = await this.users.updateById(userId, update);
     if (!next) throw new AppError("به‌روزرسانی ناموفق", "update_failed", 500);
     return this.toPublic(next);
+  }
+
+  async changePassword(userId: string, currentPassword: string, nextPassword: string): Promise<void> {
+    if (nextPassword.length < 8 || nextPassword.length > 128) {
+      throw new AppError("رمز عبور جدید باید حداقل ۸ کاراکتر باشد", "bad_password");
+    }
+
+    const doc = await this.users.findForLoginById(userId);
+    if (!doc) throw new AppError("کاربر پیدا نشد", "not_found", 404);
+
+    const ok = await bcrypt.compare(currentPassword, doc.passwordHash);
+    if (!ok) throw new AppError("رمز عبور فعلی اشتباه است", "bad_current_password", 401);
+
+    const passwordHash = await bcrypt.hash(nextPassword, this.bcryptCost);
+    const updated = await this.users.updateById(userId, { passwordHash });
+    if (!updated) throw new AppError("تغییر رمز عبور ناموفق بود", "update_failed", 500);
   }
 
   async recordMatch(userId: string, won: boolean): Promise<PublicProfile> {
