@@ -49,7 +49,7 @@ async function main() {
   attachWsServer({ server, roomService, hub: hubRef.hub });
 
   server.listen(env.PORT, () => {
-    console.log(`Card Game Hub API + WS روی پورت ${env.PORT} (مسیر WS: /ws)`);
+    console.log(`Cardix API + WS روی پورت ${env.PORT} (مسیر WS: /ws)`);
   });
 
   const shutdown = async () => {
