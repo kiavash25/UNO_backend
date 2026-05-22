@@ -4,6 +4,7 @@ import { RoomService } from "../../application/roomService.js";
 import type { UserService } from "../../application/userService.js";
 import { handleHttpError } from "./errorMiddleware.js";
 import { createAuthRouter } from "./routes/authRoutes.js";
+import { createBotRouter } from "./routes/botRoutes.js";
 import { createGameRouter } from "./routes/gameRoutes.js";
 import { createRoomRouter } from "./routes/roomRoutes.js";
 import { createUserRouter } from "./routes/userRoutes.js";
@@ -26,10 +27,10 @@ export function createHttpApp(deps: HttpAppDeps) {
 
   app.use("/api/auth", createAuthRouter(userService));
   app.use("/api", createUserRouter(userService));
+  app.use("/api/bots", createBotRouter());
   app.use("/api/games", createGameRouter());
   app.use("/api/rooms", createRoomRouter(roomService));
   app.use(handleHttpError);
 
   return app;
 }
-

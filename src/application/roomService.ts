@@ -8,7 +8,7 @@ import { generateRoomCode } from "./roomCode.js";
 import type { LobbyPlayer, RoomSettings } from "./roomTypes.js";
 import { AppError } from "./errors.js";
 import { newPlayerId, newPlayerToken, type SessionPayload } from "./session.js";
-import { AVATAR_OPTIONS } from "../constant/avatar.cons.js";
+import { BotProfileService } from "./bots/botProfiles.js";
 
 export type CreateRoomResult = {
   roomId: string;
@@ -46,25 +46,13 @@ export type RoomEvents = {
 
 export class RoomService {
   private readonly botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly botNames = [
-    "آوا",
-    "پارسا",
-    "نیما",
-    "ترانه",
-    "آرین",
-    "هلیا",
-    "مانی",
-    "دینا",
-    "سروش",
-    "روژین",
-  ];
-  private readonly botAvatars = AVATAR_OPTIONS;
 
   constructor(
     private readonly rooms: RoomRepository,
     private readonly live: LiveRoomStore,
     private readonly sessions: SessionStore,
     private readonly events: RoomEvents = {},
+    private readonly botProfiles = new BotProfileService(),
   ) {}
 
   private bump(state: LiveRoomState): void {
@@ -315,17 +303,20 @@ export class RoomService {
 
     const existing = new Set(state.players.map((p) => p.displayName));
     const botsNeeded = totalPlayers - 1;
-    for (let i = 0; i < botsNeeded; i++) {
+    const bots = this.botProfiles.pick(botsNeeded, existing);
+    for (const bot of bots) {
       const botId = newPlayerId();
-      let baseName = this.botNames[Math.floor(Math.random() * this.botNames.length)] ?? `Bot${i + 1}`;
-      while (existing.has(baseName)) {
-        baseName = `${baseName}${Math.floor(10 + Math.random() * 90)}`;
+      let displayName = bot.displayName;
+      while (existing.has(displayName)) {
+        displayName = `${bot.displayName}${Math.floor(10 + Math.random() * 90)}`;
       }
-      existing.add(baseName);
+      existing.add(displayName);
+      const profile = this.botProfiles.toPlayerProfile(bot, displayName);
       state.players.push({
         id: botId,
-        displayName: baseName,
-        avatar: this.botAvatars[i % this.botAvatars.length],
+        displayName,
+        avatar: bot.avatar,
+        profile,
         isHost: false,
         isBot: true,
         ready: true,

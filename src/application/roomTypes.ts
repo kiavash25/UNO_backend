@@ -15,10 +15,27 @@ export type LobbyPlayer = {
   id: string;
   displayName: string;
   avatar?: string;
+  profile?: PlayerProfile;
   isHost: boolean;
   isBot?: boolean;
   ready: boolean;
   connected: boolean;
+};
+
+export type PlayerProfile = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string;
+  xp: number;
+  level: number;
+  coins: number;
+  wins: number;
+  gamesPlayed: number;
+  winStreak: number;
+  bestWinStreak: number;
+  accuracyPct: number;
+  isBot: boolean;
 };
 
 export type RoomPhase = "lobby" | "playing" | "finished";
