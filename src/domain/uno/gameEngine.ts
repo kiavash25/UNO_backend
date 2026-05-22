@@ -257,7 +257,8 @@ export function drawCard(state: UnoGameState, playerId: PlayerId): PlayResult {
   if (state.pendingDrawPass === playerId) return { ok: false, code: "draw", message: "یک بار کارت کشیده‌اید؛ بازی کنید یا پاس دهید" };
 
   drawForPlayer(state, playerId);
-  state.pendingDrawPass = playerId;
+  state.pendingDrawPass = null;
+  state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, state.players.length);
   syncPublicPlayers(state);
   return { ok: true, state };
 }
