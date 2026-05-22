@@ -2,7 +2,7 @@ import WebSocket from "ws";
 import { AppError } from "../../application/errors.js";
 import { RoomService, clientRoomView } from "../../application/roomService.js";
 
-type SocketMeta = {
+export type SocketMeta = {
   roomId: string;
   playerId: string;
   token: string;
