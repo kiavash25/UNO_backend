@@ -8,5 +8,6 @@ export type LiveRoomState = {
   players: LobbyPlayer[];
   phase: RoomPhase;
   game: unknown | null;
+  turnDeadlineAt: number | null;
   version: number;
 };

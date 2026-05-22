@@ -46,6 +46,8 @@ export type RoomEvents = {
 
 export class RoomService {
   private readonly botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly turnTimeoutMs = 10_000;
 
   constructor(
     private readonly rooms: RoomRepository,
@@ -59,10 +61,23 @@ export class RoomService {
     state.version += 1;
   }
 
-  private async persist(state: LiveRoomState): Promise<void> {
+  private async persist(state: LiveRoomState, opts: { resetTurnTimer?: boolean } = {}): Promise<void> {
+    if (opts.resetTurnTimer || (state.phase === "playing" && !state.turnDeadlineAt)) {
+      this.resetTurnDeadline(state);
+    }
+    if (state.phase !== "playing") {
+      state.turnDeadlineAt = null;
+    }
     await this.live.save(state);
     this.events.onRoomChanged?.(state.id);
+    this.scheduleTurnTimeout(state.id);
     this.scheduleBotTurn(state.id);
+  }
+
+  private resetTurnDeadline(state: LiveRoomState): void {
+    const game = state.game ? this.gameForRoom(state) : null;
+    const activePlayerId = state.game && game ? game.getActivePlayerId(state.game) : null;
+    state.turnDeadlineAt = state.phase === "playing" && activePlayerId ? Date.now() + this.turnTimeoutMs : null;
   }
 
   private gameDefinition(gameId: string): CardGameDefinition {
@@ -79,6 +94,49 @@ export class RoomService {
     const pending = this.botTurnTimers.get(roomId);
     if (pending) clearTimeout(pending);
     this.botTurnTimers.delete(roomId);
+  }
+
+  private clearTurnTimer(roomId: string): void {
+    const pending = this.turnTimers.get(roomId);
+    if (pending) clearTimeout(pending);
+    this.turnTimers.delete(roomId);
+  }
+
+  private scheduleTurnTimeout(roomId: string): void {
+    this.clearTurnTimer(roomId);
+    void (async () => {
+      const state = await this.live.load(roomId);
+      if (!state || state.phase !== "playing" || !state.game || !state.turnDeadlineAt) return;
+      const game = this.gameForRoom(state);
+      const activePlayerId = game.getActivePlayerId(state.game);
+      if (!activePlayerId || !game.handleTurnTimeout) return;
+      const deadline = state.turnDeadlineAt;
+      const delayMs = Math.max(0, deadline - Date.now());
+      const timer = setTimeout(() => {
+        void this.runTurnTimeout(roomId, activePlayerId, deadline);
+      }, delayMs);
+      this.turnTimers.set(roomId, timer);
+    })();
+  }
+
+  private async runTurnTimeout(roomId: string, playerId: string, expectedDeadline: number): Promise<void> {
+    this.turnTimers.delete(roomId);
+    const state = await this.live.load(roomId);
+    if (!state || state.phase !== "playing" || !state.game) return;
+    if (state.turnDeadlineAt !== expectedDeadline || Date.now() < expectedDeadline) return;
+    const game = this.gameForRoom(state);
+    if (game.getActivePlayerId(state.game) !== playerId || !game.handleTurnTimeout) return;
+
+    const result = game.handleTurnTimeout(state.game, playerId);
+    if (!result.ok) return;
+
+    this.handleGameEvents(state, [
+      ...(result.events ?? []),
+      { type: "game.turnTimedOut", payload: { playerId, penaltyCards: 1 } },
+    ]);
+    if (game.isFinished(state.game)) state.phase = "finished";
+    this.bump(state);
+    await this.persist(state, { resetTurnTimer: true });
   }
 
   private scheduleBotTurn(roomId: string): void {
@@ -127,7 +185,7 @@ export class RoomService {
     this.handleGameEvents(state, result.events);
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
-    await this.persist(state);
+    await this.persist(state, { resetTurnTimer: true });
   }
 
   private defaultSettings(partial: Partial<RoomSettings> & Pick<RoomSettings, "name">): RoomSettings {
@@ -181,6 +239,7 @@ export class RoomService {
       players: [host],
       phase: "lobby",
       game: null,
+      turnDeadlineAt: null,
       version: 1,
     };
 
@@ -424,7 +483,7 @@ export class RoomService {
     state.game = game.createInitialState(roster);
     state.phase = "playing";
     this.bump(state);
-    await this.persist(state);
+    await this.persist(state, { resetTurnTimer: true });
   }
 
   async playCard(
@@ -464,7 +523,7 @@ export class RoomService {
     this.handleGameEvents(state, res.events);
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
-    await this.persist(state);
+    await this.persist(state, { resetTurnTimer: true });
   }
 
   private async requirePlayingSession(token: string): Promise<{ state: LiveRoomState; playerId: string }> {
@@ -489,6 +548,7 @@ export function clientRoomView(state: LiveRoomState, viewerId: string) {
     code: state.code,
     settings: state.settings,
     players: state.players,
+    turnDeadlineAt: state.turnDeadlineAt ?? null,
     game: state.game && game ? game.projectStateForPlayer(state.game, viewerId) : null,
   };
 }

@@ -274,6 +274,18 @@ export function passAfterDraw(state: UnoGameState, playerId: PlayerId): PlayResu
   return { ok: true, state };
 }
 
+export function applyTurnTimeout(state: UnoGameState, playerId: PlayerId): PlayResult {
+  if (state.status !== "playing") return { ok: false, code: "finished", message: "بازی تمام شده است" };
+  if (currentPlayerId(state) !== playerId) return { ok: false, code: "turn", message: "نوبت شما نیست" };
+
+  drawForPlayer(state, playerId);
+  state.pendingDrawPass = null;
+  state.pendingDrawStack = null;
+  state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, state.players.length);
+  syncPublicPlayers(state);
+  return { ok: true, state };
+}
+
 export function callUno(state: UnoGameState, playerId: PlayerId): PlayResult {
   if (state.status !== "playing") return { ok: false, code: "finished", message: "بازی تمام شده است" };
   const hand = state.hands[playerId];

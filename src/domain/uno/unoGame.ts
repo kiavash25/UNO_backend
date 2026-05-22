@@ -2,6 +2,7 @@ import type { CardGameAction, CardGameDefinition } from "../cardGame/cardGame.js
 import { cardMatchesTop, isWild, type UnoCard } from "./card.js";
 import {
   callUno,
+  applyTurnTimeout,
   drawCard,
   passAfterDraw,
   playCard,
@@ -91,6 +92,10 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     const afterSaidUno = state.players.find((p) => p.id === playerId)?.saidUno ?? false;
     const events = afterSaidUno && !beforeSaidUno ? [{ type: "uno.declared", payload: { playerId } }] : undefined;
     return { ok: true, events };
+  },
+
+  handleTurnTimeout(state, playerId) {
+    return applyTurnTimeout(state, playerId);
   },
 
   getActivePlayerId(state) {
