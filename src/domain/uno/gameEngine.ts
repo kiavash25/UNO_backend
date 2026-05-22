@@ -54,6 +54,10 @@ function drawForPlayer(state: UnoGameState, playerId: PlayerId): void {
   hand.push(popDrawPile(state));
 }
 
+function isDrawStackCard(card: UnoCard, currentColor: Exclude<UnoColor, "black">): boolean {
+  return card.rank === "wild4" || (card.rank === "draw2" && card.color === currentColor);
+}
+
 function syncPublicPlayers(state: UnoGameState): void {
   state.players = state.players.map((p) => ({
     ...p,
@@ -115,6 +119,7 @@ export function startNewGame(
     hands,
     winnerId: null,
     pendingDrawPass: null,
+    pendingDrawStack: null,
   };
 }
 
@@ -127,16 +132,18 @@ function currentPlayerId(state: UnoGameState): PlayerId {
 function applyCardEffect(state: UnoGameState, played: UnoCard, chosenColor?: Exclude<UnoColor, "black">): void {
   const n = state.players.length;
   const dir = state.direction;
+  const pendingAmount = state.pendingDrawStack?.amount ?? 0;
 
   if (played.rank === "wild" || played.rank === "wild4") {
     const color = chosenColor ?? "red";
     state.currentColor = color;
     if (played.rank === "wild4") {
-      const victim = stepTurn(state.turnIndex, 1, dir, n);
-      const vid = state.players[victim]!.id;
-      drawN(state, vid, 4);
-      state.turnIndex = stepTurn(state.turnIndex, 2, dir, n);
+      const targetIndex = stepTurn(state.turnIndex, 1, dir, n);
+      const targetId = state.players[targetIndex]!.id;
+      state.pendingDrawStack = { playerId: targetId, amount: pendingAmount + 4, color };
+      state.turnIndex = targetIndex;
     } else {
+      state.pendingDrawStack = null;
       state.turnIndex = stepTurn(state.turnIndex, 1, dir, n);
     }
     return;
@@ -146,9 +153,11 @@ function applyCardEffect(state: UnoGameState, played: UnoCard, chosenColor?: Exc
 
   switch (played.rank) {
     case "skip":
+      state.pendingDrawStack = null;
       state.turnIndex = stepTurn(state.turnIndex, 2, dir, n);
       break;
     case "reverse":
+      state.pendingDrawStack = null;
       state.direction = (state.direction * -1) as Direction;
       if (n === 2) {
         state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, n);
@@ -157,13 +166,18 @@ function applyCardEffect(state: UnoGameState, played: UnoCard, chosenColor?: Exc
       }
       break;
     case "draw2": {
-      const victim = stepTurn(state.turnIndex, 1, dir, n);
-      const vid = state.players[victim]!.id;
-      drawN(state, vid, 2);
-      state.turnIndex = stepTurn(state.turnIndex, 2, dir, n);
+      const targetIndex = stepTurn(state.turnIndex, 1, dir, n);
+      const targetId = state.players[targetIndex]!.id;
+      state.pendingDrawStack = {
+        playerId: targetId,
+        amount: pendingAmount + 2,
+        color: played.color as Exclude<UnoColor, "black">,
+      };
+      state.turnIndex = targetIndex;
       break;
     }
     default:
+      state.pendingDrawStack = null;
       state.turnIndex = stepTurn(state.turnIndex, 1, dir, n);
   }
 }
@@ -186,7 +200,14 @@ export function playCard(
   const card = hand[idx]!;
   const top = topDiscard(state);
 
-  if (!cardMatchesTop(card, top, state.currentColor)) {
+  if (state.pendingDrawStack) {
+    if (state.pendingDrawStack.playerId !== playerId) {
+      return { ok: false, code: "turn", message: "نوبت شما نیست" };
+    }
+    if (!isDrawStackCard(card, state.pendingDrawStack.color)) {
+      return { ok: false, code: "draw_stack", message: "برای انتقال جریمه باید +4 یا +2 همان رنگ بازی کنید" };
+    }
+  } else if (!cardMatchesTop(card, top, state.currentColor)) {
     return { ok: false, code: "illegal", message: "این کارت قابل بازی نیست" };
   }
 
@@ -224,6 +245,15 @@ export function playCard(
 export function drawCard(state: UnoGameState, playerId: PlayerId): PlayResult {
   if (state.status !== "playing") return { ok: false, code: "finished", message: "بازی تمام شده است" };
   if (currentPlayerId(state) !== playerId) return { ok: false, code: "turn", message: "نوبت شما نیست" };
+  if (state.pendingDrawStack) {
+    if (state.pendingDrawStack.playerId !== playerId) return { ok: false, code: "turn", message: "نوبت شما نیست" };
+    drawN(state, playerId, state.pendingDrawStack.amount);
+    state.pendingDrawStack = null;
+    state.pendingDrawPass = null;
+    state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, state.players.length);
+    syncPublicPlayers(state);
+    return { ok: true, state };
+  }
   if (state.pendingDrawPass === playerId) return { ok: false, code: "draw", message: "یک بار کارت کشیده‌اید؛ بازی کنید یا پاس دهید" };
 
   drawForPlayer(state, playerId);
@@ -234,6 +264,7 @@ export function drawCard(state: UnoGameState, playerId: PlayerId): PlayResult {
 
 export function passAfterDraw(state: UnoGameState, playerId: PlayerId): PlayResult {
   if (state.status !== "playing") return { ok: false, code: "finished", message: "بازی تمام شده است" };
+  if (state.pendingDrawStack) return drawCard(state, playerId);
   if (state.pendingDrawPass !== playerId) return { ok: false, code: "pass", message: "نیازی به پاس نیست" };
 
   state.pendingDrawPass = null;

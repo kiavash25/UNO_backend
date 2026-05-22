@@ -25,7 +25,9 @@ function chooseBotCard(state: UnoGameState, playerId: string): UnoCard | null {
   const hand = state.hands[playerId] ?? [];
   const top = state.discardPile[state.discardPile.length - 1];
   if (!top) return null;
-  const legal = hand.filter((c) => cardMatchesTop(c, top, state.currentColor));
+  const legal = state.pendingDrawStack
+    ? hand.filter((c) => c.rank === "wild4" || (c.rank === "draw2" && c.color === state.pendingDrawStack?.color))
+    : hand.filter((c) => cardMatchesTop(c, top, state.currentColor));
   if (!legal.length) return null;
 
   legal.sort((a, b) => {
@@ -114,4 +116,3 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     return { type: "draw" };
   },
 };
-

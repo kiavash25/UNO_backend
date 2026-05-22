@@ -14,6 +14,12 @@ export type UnoPublicPlayer = {
   saidUno: boolean;
 };
 
+export type UnoDrawStack = {
+  playerId: PlayerId;
+  amount: number;
+  color: Exclude<UnoColor, "black">;
+};
+
 export type UnoGameState = {
   status: UnoGameStatus;
   /** ترتیب نوبت همان ترتیب آرایه بازیکنان است؛ ایندکس فعلی نوبت */
@@ -29,4 +35,5 @@ export type UnoGameState = {
   winnerId: PlayerId | null;
   /** اگر بازیکن کارت کشیده و هنوز pass نکرده */
   pendingDrawPass: PlayerId | null;
+  pendingDrawStack: UnoDrawStack | null;
 };

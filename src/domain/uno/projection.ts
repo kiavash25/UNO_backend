@@ -12,6 +12,6 @@ export function projectUnoGameStateForPlayer(state: UnoGameState, viewerId: Play
     myHand: state.hands[viewerId] ?? [],
     winnerId: state.winnerId,
     pendingDrawPass: state.pendingDrawPass,
+    pendingDrawStack: state.pendingDrawStack,
   };
 }
-
