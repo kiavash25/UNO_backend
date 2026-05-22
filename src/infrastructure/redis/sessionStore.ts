@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
 import type { SessionPayload } from "../../application/session.js";
-import { redisKeys } from "./keys.js";
+import { legacyUnoRedisKeys, redisKeys } from "./keys.js";
 
 export class SessionStore {
   constructor(
@@ -13,7 +13,7 @@ export class SessionStore {
   }
 
   async get(token: string): Promise<SessionPayload | null> {
-    const raw = await this.redis.get(redisKeys.session(token));
+    const raw = await this.redis.get(redisKeys.session(token)) ?? await this.redis.get(legacyUnoRedisKeys.session(token));
     if (!raw) return null;
     return JSON.parse(raw) as SessionPayload;
   }

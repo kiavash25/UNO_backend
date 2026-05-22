@@ -4,9 +4,11 @@ import { z } from "zod";
 import { AppError } from "../../application/errors.js";
 import { RoomService } from "../../application/roomService.js";
 import type { UserService } from "../../application/userService.js";
+import { listCardGames } from "../../domain/cardGame/gameRegistry.js";
 import { bearerAuth } from "./authMiddleware.js";
 
 const createRoomBody = z.object({
+  gameId: z.string().min(1).max(32).optional(),
   hostDisplayName: z.string().min(1).max(32),
   avatar: z.string().min(1).max(128).optional(),
   name: z.string().min(1).max(64),
@@ -25,11 +27,13 @@ const joinBody = z.object({
 });
 
 const quickPlayBody = z.object({
+  gameId: z.string().min(1).max(32).optional(),
   displayName: z.string().min(1).max(32),
   avatar: z.string().min(1).max(128).optional(),
 });
 
 const botMatchBody = z.object({
+  gameId: z.string().min(1).max(32).optional(),
   displayName: z.string().min(1).max(32),
   avatar: z.string().min(1).max(128).optional(),
   totalPlayers: z.number().int().min(2).max(4),
@@ -109,6 +113,17 @@ export function createHttpApp(deps: HttpAppDeps) {
     res.json({ ok: true });
   });
 
+  app.get("/api/games", (_req, res) => {
+    const games = listCardGames().map((game) => ({
+      id: game.id,
+      displayName: game.displayName,
+      minPlayers: game.minPlayers,
+      maxPlayers: game.maxPlayers,
+      supportsBots: Boolean(game.chooseBotAction),
+    }));
+    res.json({ games });
+  });
+
   app.post("/api/auth/register", async (req, res) => {
     try {
       const body = registerBody.parse(req.body);
@@ -172,6 +187,7 @@ export function createHttpApp(deps: HttpAppDeps) {
     try {
       const body = createRoomBody.parse(req.body);
       const result = await roomService.createRoom(body.hostDisplayName, body.avatar, {
+        gameId: body.gameId,
         name: body.name,
         maxPlayers: body.maxPlayers,
         mode: body.mode,
@@ -205,7 +221,7 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.post("/api/rooms/quick", async (req, res) => {
     try {
       const body = quickPlayBody.parse(req.body);
-      const result = await roomService.quickPlay(body.displayName, body.avatar);
+      const result = await roomService.quickPlay(body.displayName, body.avatar, body.gameId);
       res.status(result.created ? 201 : 200).json(result);
     } catch (e) {
       handleError(res, e);
@@ -215,7 +231,7 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.post("/api/rooms/bot-match", async (req, res) => {
     try {
       const body = botMatchBody.parse(req.body);
-      const result = await roomService.createBotMatch(body.displayName, body.totalPlayers, body.avatar);
+      const result = await roomService.createBotMatch(body.displayName, body.totalPlayers, body.avatar, body.gameId);
       res.status(201).json(result);
     } catch (e) {
       handleError(res, e);

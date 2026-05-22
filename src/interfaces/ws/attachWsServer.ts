@@ -35,6 +35,10 @@ const gamePlay = z.object({
 const gameDraw = z.object({ type: z.literal("game.draw") });
 const gamePass = z.object({ type: z.literal("game.pass") });
 const gameUno = z.object({ type: z.literal("game.uno") });
+const gameAction = z.object({
+  type: z.literal("game.action"),
+  action: z.object({ type: z.string().min(1) }).passthrough(),
+});
 
 const clientMessage = z.discriminatedUnion("type", [
   authMsg,
@@ -45,6 +49,7 @@ const clientMessage = z.discriminatedUnion("type", [
   gameDraw,
   gamePass,
   gameUno,
+  gameAction,
 ]);
 
 export function attachWsServer(params: { server: import("http").Server; roomService: RoomService; hub: WsHub }) {
@@ -131,6 +136,9 @@ export function attachWsServer(params: { server: import("http").Server; roomServ
             break;
           case "game.uno":
             await params.roomService.uno(meta.token);
+            break;
+          case "game.action":
+            await params.roomService.applyGameAction(meta.token, msg.data.action);
             break;
           default:
             break;

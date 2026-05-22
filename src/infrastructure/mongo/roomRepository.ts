@@ -9,6 +9,7 @@ export class RoomRepository {
   }): Promise<RoomDoc> {
     const doc = await RoomModel.create({
       code: params.code,
+      gameId: params.settings.gameId,
       name: params.settings.name,
       maxPlayers: params.settings.maxPlayers,
       mode: params.settings.mode,

@@ -1,20 +1,13 @@
-﻿import {
-  startNewGame,
-  playCard,
-  drawCard,
-  passAfterDraw,
-  callUno,
-} from "../domain/uno/gameEngine.js";
+import type { CardGameAction, CardGameDefinition, CardGameEvent } from "../domain/cardGame/cardGame.js";
+import { getCardGame } from "../domain/cardGame/gameRegistry.js";
 import { RoomRepository } from "../infrastructure/mongo/roomRepository.js";
 import { LiveRoomStore } from "../infrastructure/redis/liveRoomStore.js";
 import { SessionStore } from "../infrastructure/redis/sessionStore.js";
-import { projectGameStateForPlayer } from "./gameProjection.js";
 import type { LiveRoomState } from "./liveRoomState.js";
 import { generateRoomCode } from "./roomCode.js";
 import type { LobbyPlayer, RoomSettings } from "./roomTypes.js";
 import { AppError } from "./errors.js";
 import { newPlayerId, newPlayerToken, type SessionPayload } from "./session.js";
-import { cardMatchesTop, isWild, type UnoCard } from "../domain/uno/card.js";
 import { AVATAR_OPTIONS } from "../constant/avatar.cons.js";
 
 export type CreateRoomResult = {
@@ -35,6 +28,7 @@ export type BotMatchResult = CreateRoomResult;
 
 export type PublicRoomSummary = {
   code: string;
+  gameId: string;
   name: string;
   maxPlayers: number;
   currentPlayers: number;
@@ -46,6 +40,7 @@ export type PublicRoomSummary = {
 export type RoomEvents = {
   onRoomChanged?: (roomId: string) => void;
   onUnoDeclared?: (roomId: string, playerId: string, displayName: string) => void;
+  onGameEvent?: (roomId: string, event: CardGameEvent) => void;
   onRoomDestroyed?: (roomId: string) => void;
 };
 
@@ -82,45 +77,20 @@ export class RoomService {
     this.scheduleBotTurn(state.id);
   }
 
+  private gameDefinition(gameId: string): CardGameDefinition {
+    const game = getCardGame(gameId);
+    if (!game) throw new AppError("این بازی پشتیبانی نمی‌شود", "unsupported_game", 400);
+    return game;
+  }
+
+  private gameForRoom(state: LiveRoomState): CardGameDefinition {
+    return this.gameDefinition(state.settings.gameId ?? "uno");
+  }
+
   private clearBotTimer(roomId: string): void {
     const pending = this.botTurnTimers.get(roomId);
     if (pending) clearTimeout(pending);
     this.botTurnTimers.delete(roomId);
-  }
-
-  private chooseBotCard(state: NonNullable<LiveRoomState["game"]>, playerId: string): UnoCard | null {
-    const hand = state.hands[playerId] ?? [];
-    const top = state.discardPile[state.discardPile.length - 1];
-    if (!top) return null;
-    const legal = hand.filter((c) => cardMatchesTop(c, top, state.currentColor));
-    if (!legal.length) return null;
-
-    legal.sort((a, b) => {
-      const aWild = isWild(a) ? 1 : 0;
-      const bWild = isWild(b) ? 1 : 0;
-      if (aWild !== bWild) return aWild - bWild;
-      if (a.rank === "skip" || a.rank === "reverse" || a.rank === "draw2") return -1;
-      if (b.rank === "skip" || b.rank === "reverse" || b.rank === "draw2") return 1;
-      return 0;
-    });
-
-    const idx = Math.min(legal.length - 1, Math.floor(Math.random() * Math.min(2, legal.length)));
-    return legal[idx] ?? legal[0] ?? null;
-  }
-
-  private chooseWildColor(state: NonNullable<LiveRoomState["game"]>, playerId: string): "red" | "yellow" | "green" | "blue" {
-    const hand = state.hands[playerId] ?? [];
-    const counts: Record<"red" | "yellow" | "green" | "blue", number> = {
-      red: 0,
-      yellow: 0,
-      green: 0,
-      blue: 0,
-    };
-    for (const c of hand) {
-      if (c.color === "black") continue;
-      counts[c.color] += 1;
-    }
-    return (Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] as "red" | "yellow" | "green" | "blue") ?? "red";
   }
 
   private scheduleBotTurn(roomId: string): void {
@@ -128,10 +98,10 @@ export class RoomService {
     void (async () => {
       const state = await this.live.load(roomId);
       if (!state || state.phase !== "playing" || !state.game) return;
-      const game = state.game;
-      const active = game.players[game.turnIndex];
-      if (!active) return;
-      const lobbyPlayer = state.players.find((p) => p.id === active.id);
+      const game = this.gameForRoom(state);
+      const activePlayerId = game.getActivePlayerId(state.game);
+      if (!activePlayerId) return;
+      const lobbyPlayer = state.players.find((p) => p.id === activePlayerId);
       if (!lobbyPlayer?.isBot) return;
 
       const base = state.settings.mode === "fast" ? 700 : 1100;
@@ -140,7 +110,7 @@ export class RoomService {
       const lockedVersion = state.version;
 
       const timer = setTimeout(() => {
-        void this.runBotTurn(roomId, active.id, lockedVersion);
+        void this.runBotTurn(roomId, activePlayerId, lockedVersion);
       }, delayMs);
 
       this.botTurnTimers.set(roomId, timer);
@@ -152,55 +122,33 @@ export class RoomService {
     const state = await this.live.load(roomId);
     if (!state || state.phase !== "playing" || !state.game) return;
     if (state.version !== expectedVersion) return;
-    const game = state.game;
-    const active = game.players[game.turnIndex];
-    if (!active || active.id !== botId) return;
+    const game = this.gameForRoom(state);
+    if (game.getActivePlayerId(state.game) !== botId) return;
     const lobby = state.players.find((p) => p.id === botId);
     if (!lobby?.isBot) return;
 
-    const picked = this.chooseBotCard(game, botId);
-    if (picked) {
-      const shouldSayUno = (game.hands[botId]?.length ?? 0) === 2 && Math.random() > 0.12;
-      const res = playCard(game, botId, picked.id, {
-        chosenColor: picked.color === "black" ? this.chooseWildColor(game, botId) : undefined,
-        declareUno: shouldSayUno,
-      });
-      if (!res.ok) return;
-      if (shouldSayUno) this.emitUnoDeclared(state, botId);
-      if (game.status === "finished") state.phase = "finished";
-      this.bump(state);
-      await this.persist(state);
-      return;
-    }
+    const action = game.chooseBotAction?.(state.game, botId, {
+      settings: state.settings,
+      lobbyPlayers: state.players,
+    });
+    if (!action) return;
 
-    const drawRes = drawCard(game, botId);
-    if (!drawRes.ok) return;
-    const afterDraw = this.chooseBotCard(game, botId);
-    const shouldPlayAfterDraw = !!afterDraw && Math.random() > 0.38;
-    if (shouldPlayAfterDraw && afterDraw) {
-      const shouldSayUno = (game.hands[botId]?.length ?? 0) === 2 && Math.random() > 0.12;
-      const playRes = playCard(game, botId, afterDraw.id, {
-        chosenColor: afterDraw.color === "black" ? this.chooseWildColor(game, botId) : undefined,
-        declareUno: shouldSayUno,
-      });
-      if (!playRes.ok) return;
-      if (shouldSayUno) this.emitUnoDeclared(state, botId);
-      if (game.status === "finished") state.phase = "finished";
-      this.bump(state);
-      await this.persist(state);
-      return;
-    }
+    const result = game.applyAction(state.game, botId, action);
+    if (!result.ok) return;
 
-    const passRes = passAfterDraw(game, botId);
-    if (!passRes.ok) return;
+    this.handleGameEvents(state, result.events);
+    if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state);
   }
 
   private defaultSettings(partial: Partial<RoomSettings> & Pick<RoomSettings, "name">): RoomSettings {
+    const gameId = partial.gameId ?? "uno";
+    const game = this.gameDefinition(gameId);
     return {
+      gameId,
       name: partial.name,
-      maxPlayers: partial.maxPlayers ?? 4,
+      maxPlayers: partial.maxPlayers ?? Math.min(4, game.maxPlayers),
       mode: partial.mode ?? "classic",
       isPrivate: partial.isPrivate ?? true,
       turnTimeoutSec: partial.mode === "fast" ? 30 : 120,
@@ -209,8 +157,9 @@ export class RoomService {
 
   async createRoom(hostDisplayName: string, avatar: string | undefined, input: Partial<RoomSettings> & { name: string }): Promise<CreateRoomResult> {
     const settings = this.defaultSettings(input);
-    if (settings.maxPlayers < 2 || settings.maxPlayers > 10) {
-      throw new AppError("حداکثر بازیکن باید بین ۲ تا ۱۰ باشد", "bad_settings");
+    const game = this.gameDefinition(settings.gameId);
+    if (settings.maxPlayers < game.minPlayers || settings.maxPlayers > game.maxPlayers) {
+      throw new AppError(`تعداد بازیکن برای ${game.displayName} باید بین ${game.minPlayers} تا ${game.maxPlayers} باشد`, "bad_settings");
     }
 
     const hostId = newPlayerId();
@@ -312,6 +261,7 @@ export class RoomService {
 
       results.push({
         code: state.code,
+        gameId: state.settings.gameId ?? "uno",
         name: state.settings.name,
         maxPlayers: state.settings.maxPlayers,
         currentPlayers: state.players.length,
@@ -327,14 +277,16 @@ export class RoomService {
   async quickPlay(
     displayName: string,
     avatar?: string,
+    gameId = "uno",
   ): Promise<(CreateRoomResult | JoinRoomResult) & { created: boolean }> {
-    const open = await this.listPublicRooms();
+    const open = (await this.listPublicRooms()).filter((room) => room.gameId === gameId);
     if (open.length > 0) {
       const joined = await this.joinRoom(open[0]!.code, displayName, avatar);
       return { ...joined, created: false };
     }
 
     const created = await this.createRoom(displayName, avatar, {
+      gameId,
       name: "بازی سریع",
       maxPlayers: 4,
       mode: "fast",
@@ -343,12 +295,15 @@ export class RoomService {
     return { ...created, created: true };
   }
 
-  async createBotMatch(displayName: string, totalPlayers: number, avatar?: string): Promise<BotMatchResult> {
-    if (totalPlayers < 2 || totalPlayers > 4) {
-      throw new AppError("تعداد بازیکن باید بین ۲ تا ۴ باشد", "bad_settings");
+  async createBotMatch(displayName: string, totalPlayers: number, avatar?: string, gameId = "uno"): Promise<BotMatchResult> {
+    const game = this.gameDefinition(gameId);
+    if (!game.chooseBotAction) throw new AppError("این بازی فعلا بات ندارد", "unsupported_bot", 400);
+    if (totalPlayers < game.minPlayers || totalPlayers > Math.min(4, game.maxPlayers)) {
+      throw new AppError(`تعداد بازیکن باید بین ${game.minPlayers} تا ${Math.min(4, game.maxPlayers)} باشد`, "bad_settings");
     }
 
     const created = await this.createRoom(displayName, avatar, {
+      gameId,
       name: "بازی با بات",
       maxPlayers: totalPlayers,
       mode: "classic",
@@ -384,7 +339,6 @@ export class RoomService {
     return created;
   }
 
-  /** اطلاعات عمومی اتاق برای لندینگ / بررسی قبل از ورود (بدون توکن). */
   async getPublicByCode(code: string): Promise<PublicRoomSummary | null> {
     const upper = code.toUpperCase();
     let roomId = await this.live.findRoomIdByCode(upper);
@@ -399,6 +353,7 @@ export class RoomService {
 
     return {
       code: live.code,
+      gameId: live.settings.gameId ?? "uno",
       name: live.settings.name,
       maxPlayers: live.settings.maxPlayers,
       currentPlayers: live.players.length,
@@ -408,9 +363,15 @@ export class RoomService {
     };
   }
 
-  private emitUnoDeclared(state: LiveRoomState, playerId: string): void {
-    const lobby = state.players.find((p) => p.id === playerId);
-    this.events.onUnoDeclared?.(state.id, playerId, lobby?.displayName ?? "بازیکن");
+  private handleGameEvents(state: LiveRoomState, events: CardGameEvent[] = []): void {
+    for (const event of events) {
+      this.events.onGameEvent?.(state.id, event);
+      if (event.type !== "uno.declared") continue;
+      const playerId = typeof event.payload?.playerId === "string" ? event.payload.playerId : "";
+      if (!playerId) continue;
+      const lobby = state.players.find((p) => p.id === playerId);
+      this.events.onUnoDeclared?.(state.id, playerId, lobby?.displayName ?? "بازیکن");
+    }
   }
 
   async setConnected(roomId: string, playerId: string, connected: boolean): Promise<void> {
@@ -435,20 +396,6 @@ export class RoomService {
     this.bump(state);
     await this.persist(state);
   }
-
-//   private async destroyRoom(roomId: string): Promise<void> {
-//     const state = await this.live.load(roomId);
-//     if (!state) return;
-
-//     // Remove from public lobby index
-//     await this.live.removeFromPublicLobbyIndex(roomId);
-    
-//     // Delete the room from Redis
-//     await this.live.delete(roomId);
-
-//     // Notify all connected clients that the room is destroyed
-//     this.events.onRoomDestroyed?.(roomId);
-//   }
 
   async setReady(token: string, ready: boolean): Promise<void> {
     const sess = await this.sessions.get(token);
@@ -478,11 +425,12 @@ export class RoomService {
 
     if (state.phase !== "lobby") throw new AppError("بازی از قبل شروع شده", "bad_phase");
 
-    if (state.players.length < 2) throw new AppError("حداقل دو بازیکن لازم است", "not_enough");
+    const game = this.gameForRoom(state);
+    if (state.players.length < game.minPlayers) throw new AppError("حداقل دو بازیکن لازم است", "not_enough");
+    if (state.players.length > game.maxPlayers) throw new AppError("تعداد بازیکن‌ها برای این بازی زیاد است", "bad_settings");
 
     const roster = state.players.map((p) => ({ id: p.id, displayName: p.displayName, avatar: p.avatar }));
-    const game = startNewGame(roster);
-    state.game = game;
+    state.game = game.createInitialState(roster);
     state.phase = "playing";
     this.bump(state);
     await this.persist(state);
@@ -493,60 +441,37 @@ export class RoomService {
     cardId: string,
     opts?: { chosenColor?: "red" | "yellow" | "green" | "blue"; declareUno?: boolean },
   ): Promise<void> {
-    const sess = await this.requirePlayingSession(token);
-    const state = sess.state;
-    const game = state.game;
-    if (!game) throw new AppError("بازی فعال نیست", "bad_phase");
-
-    const res = playCard(game, sess.playerId, cardId, opts);
-    if (!res.ok) throw new AppError(res.message, res.code);
-
-    if (opts?.declareUno) {
-      const pub = game.players.find((p) => p.id === sess.playerId);
-      if (pub?.saidUno) this.emitUnoDeclared(state, sess.playerId);
-    }
-
-    if (game.status === "finished") state.phase = "finished";
-    this.bump(state);
-    await this.persist(state);
+    await this.applyGameAction(token, {
+      type: "playCard",
+      cardId,
+      chosenColor: opts?.chosenColor,
+      declareUno: opts?.declareUno,
+    });
   }
 
   async draw(token: string): Promise<void> {
-    const sess = await this.requirePlayingSession(token);
-    const state = sess.state;
-    const game = state.game;
-    if (!game) throw new AppError("بازی فعال نیست", "bad_phase");
-
-    const res = drawCard(game, sess.playerId);
-    if (!res.ok) throw new AppError(res.message, res.code);
-
-    this.bump(state);
-    await this.persist(state);
+    await this.applyGameAction(token, { type: "draw" });
   }
 
   async pass(token: string): Promise<void> {
-    const sess = await this.requirePlayingSession(token);
-    const state = sess.state;
-    const game = state.game;
-    if (!game) throw new AppError("بازی فعال نیست", "bad_phase");
-
-    const res = passAfterDraw(game, sess.playerId);
-    if (!res.ok) throw new AppError(res.message, res.code);
-
-    this.bump(state);
-    await this.persist(state);
+    await this.applyGameAction(token, { type: "pass" });
   }
 
   async uno(token: string): Promise<void> {
+    await this.applyGameAction(token, { type: "uno" });
+  }
+
+  async applyGameAction(token: string, action: CardGameAction): Promise<void> {
     const sess = await this.requirePlayingSession(token);
     const state = sess.state;
-    const game = state.game;
-    if (!game) throw new AppError("بازی فعال نیست", "bad_phase");
+    if (!state.game) throw new AppError("بازی فعال نیست", "bad_phase");
 
-    const res = callUno(game, sess.playerId);
+    const game = this.gameForRoom(state);
+    const res = game.applyAction(state.game, sess.playerId, action);
     if (!res.ok) throw new AppError(res.message, res.code);
 
-    this.emitUnoDeclared(state, sess.playerId);
+    this.handleGameEvents(state, res.events);
+    if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state);
   }
@@ -565,6 +490,7 @@ export class RoomService {
 }
 
 export function clientRoomView(state: LiveRoomState, viewerId: string) {
+  const game = getCardGame(state.settings.gameId ?? "uno");
   return {
     type: "room.state" as const,
     version: state.version,
@@ -572,7 +498,6 @@ export function clientRoomView(state: LiveRoomState, viewerId: string) {
     code: state.code,
     settings: state.settings,
     players: state.players,
-    game: state.game ? projectGameStateForPlayer(state.game, viewerId) : null,
+    game: state.game && game ? game.projectStateForPlayer(state.game, viewerId) : null,
   };
 }
-

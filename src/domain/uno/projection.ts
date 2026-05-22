@@ -1,7 +1,6 @@
-import type { PlayerId, UnoGameState } from "../domain/uno/gameState.js";
+import type { PlayerId, UnoGameState } from "./gameState.js";
 
-/** نمای بازی برای یک کلاینت: دست بقیه مخفی است. */
-export function projectGameStateForPlayer(state: UnoGameState, viewerId: PlayerId) {
+export function projectUnoGameStateForPlayer(state: UnoGameState, viewerId: PlayerId) {
   return {
     status: state.status,
     turnIndex: state.turnIndex,
@@ -15,3 +14,4 @@ export function projectGameStateForPlayer(state: UnoGameState, viewerId: PlayerI
     pendingDrawPass: state.pendingDrawPass,
   };
 }
+

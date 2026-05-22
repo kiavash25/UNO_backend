@@ -1,4 +1,3 @@
-import type { UnoGameState } from "../domain/uno/gameState.js";
 import type { LobbyPlayer, RoomPhase, RoomSettings } from "./roomTypes.js";
 
 export type LiveRoomState = {
@@ -8,6 +7,6 @@ export type LiveRoomState = {
   hostId: string;
   players: LobbyPlayer[];
   phase: RoomPhase;
-  game: UnoGameState | null;
+  game: unknown | null;
   version: number;
 };

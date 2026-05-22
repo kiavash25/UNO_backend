@@ -1,6 +1,8 @@
 export type GameMode = "classic" | "fast";
+export type CardGameId = "uno" | string;
 
 export type RoomSettings = {
+  gameId: CardGameId;
   name: string;
   maxPlayers: number;
   mode: GameMode;
