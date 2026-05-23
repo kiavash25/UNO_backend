@@ -54,6 +54,19 @@ function drawForPlayer(state: UnoGameState, playerId: PlayerId): void {
   hand.push(popDrawPile(state));
 }
 
+export function penalizeMissedUno(state: UnoGameState, playerId: PlayerId): boolean {
+  const hand = state.hands[playerId];
+  if (!hand || hand.length !== 1) return false;
+
+  const pub = state.players.find((p) => p.id === playerId);
+  if (!pub || pub.saidUno) return false;
+
+  drawForPlayer(state, playerId);
+  pub.saidUno = false;
+  syncPublicPlayers(state);
+  return true;
+}
+
 function isDrawStackCard(card: UnoCard, currentColor: Exclude<UnoColor, "black">): boolean {
   return card.rank === "wild4" || (card.rank === "draw2" && card.color === currentColor);
 }
@@ -221,7 +234,7 @@ export function playCard(
   state.pendingDrawPass = null;
 
   for (const p of state.players) {
-    if (p.id !== playerId) p.saidUno = false;
+    if (p.id !== playerId && (state.hands[p.id]?.length ?? 0) !== 1) p.saidUno = false;
   }
 
   const nextCount = hand.length;

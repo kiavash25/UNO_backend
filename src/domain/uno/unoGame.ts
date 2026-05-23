@@ -5,6 +5,7 @@ import {
   applyTurnTimeout,
   drawCard,
   passAfterDraw,
+  penalizeMissedUno,
   playCard,
   startNewGame,
 } from "./gameEngine.js";
@@ -100,6 +101,21 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
 
     const afterSaidUno = state.players.find((p) => p.id === playerId)?.saidUno ?? false;
     const events: CardGameEvent[] = [];
+    if (action.type === "playCard" && state.status === "playing") {
+      for (const player of state.players) {
+        if (player.id === playerId) continue;
+        if (penalizeMissedUno(state, player.id)) {
+          events.push({
+            type: "uno.missedPenalty",
+            payload: {
+              playerId: player.id,
+              byPlayerId: playerId,
+              penaltyCards: 1,
+            },
+          });
+        }
+      }
+    }
     if (skippedPlayerId && state.status === "playing") {
       events.push({ type: "uno.playerSkipped", payload: { playerId: skippedPlayerId, byPlayerId: playerId } });
     }
