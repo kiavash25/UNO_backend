@@ -5,7 +5,7 @@ const id = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12);
 
 const COLORS: Exclude<UnoColor, "black">[] = ["red", "yellow", "green", "blue"];
 
-const NUMBER_RANKS: UnoRank[] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+const NUMBER_RANKS: UnoRank[] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 function make(color: UnoColor, rank: UnoRank): UnoCard {
   return { id: id(), color, rank };
@@ -16,9 +16,7 @@ export function createShuffledDeck(): UnoCard[] {
   const deck: UnoCard[] = [];
 
   for (const c of COLORS) {
-    deck.push(make(c, "0"));
     for (const r of NUMBER_RANKS) {
-      if (r === "0") continue;
       deck.push(make(c, r), make(c, r));
     }
     deck.push(make(c, "skip"), make(c, "skip"));

@@ -1,7 +1,6 @@
 export type UnoColor = "red" | "yellow" | "green" | "blue" | "black";
 
 export type UnoRank =
-  | "0"
   | "1"
   | "2"
   | "3"
