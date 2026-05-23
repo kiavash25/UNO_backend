@@ -14,6 +14,15 @@ const changePasswordBody = z.object({
 
 const matchBody = z.object({
   won: z.boolean(),
+  gameId: z.enum(["uno"]).optional(),
+});
+
+const leaderboardParams = z.object({
+  scope: z.enum(["overall", "uno"]),
+});
+
+const leaderboardQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export class UserController {
@@ -38,8 +47,14 @@ export class UserController {
 
   recordMatch: express.RequestHandler = async (req, res) => {
     const body = matchBody.parse(req.body);
-    const user = await this.users.recordMatch(req.authed!.userId, body.won);
+    const user = await this.users.recordMatch(req.authed!.userId, body.won, body.gameId ?? "uno");
     res.json(user);
   };
-}
 
+  leaderboard: express.RequestHandler = async (req, res) => {
+    const params = leaderboardParams.parse(req.params);
+    const query = leaderboardQuery.parse(req.query);
+    const leaderboard = await this.users.getLeaderboard(params.scope, query.limit);
+    res.json(leaderboard);
+  };
+}

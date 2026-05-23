@@ -9,6 +9,7 @@ export function createUserRouter(userService: UserService): Router {
   const controller = new UserController(userService);
   const auth = bearerAuth(userService);
 
+  router.get("/leaderboard/:scope", asyncHandler(controller.leaderboard));
   router.get("/me", auth, asyncHandler(controller.me));
   router.patch("/me", auth, asyncHandler(controller.updateMe));
   router.patch("/me/password", auth, asyncHandler(controller.changePassword));
@@ -16,4 +17,3 @@ export function createUserRouter(userService: UserService): Router {
 
   return router;
 }
-

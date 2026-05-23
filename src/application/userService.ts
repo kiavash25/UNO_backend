@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import type { JwtService } from "../infrastructure/auth/jwt.js";
-import type { UserDoc } from "../infrastructure/mongo/models/userModel.js";
+import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/userModel.js";
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
 import { AppError } from "./errors.js";
 import {
@@ -27,7 +27,26 @@ export type PublicProfile = {
   winStreak: number;
   bestWinStreak: number;
   accuracyPct: number;
+  gameStats: Record<string, UserGameStats>;
   createdAt: Date;
+};
+
+export type LeaderboardScope = "overall" | "uno";
+
+export type LeaderboardEntry = {
+  rank: number;
+  userId: string;
+  displayName: string;
+  avatar: string;
+  xp: number;
+  wins: number;
+  gamesPlayed: number;
+  accuracyPct: number;
+};
+
+export type Leaderboard = {
+  scope: LeaderboardScope;
+  entries: LeaderboardEntry[];
 };
 
 export class UserService {
@@ -39,6 +58,12 @@ export class UserService {
 
   verifyAccessToken(token: string): Promise<{ userId: string; phone: string }> {
     return this.jwt.verifyAccessToken(token);
+  }
+
+  private normalizeGameStats(gameStats: UserDoc["gameStats"]): Record<string, UserGameStats> {
+    if (!gameStats) return {};
+    if (gameStats instanceof Map) return Object.fromEntries(gameStats.entries());
+    return gameStats;
   }
 
   private toPublic(user: UserDoc): PublicProfile {
@@ -59,6 +84,7 @@ export class UserService {
       winStreak: user.winStreak,
       bestWinStreak: user.bestWinStreak,
       accuracyPct: user.accuracyPct,
+      gameStats: this.normalizeGameStats(user.gameStats),
       createdAt: user.createdAt,
     };
   }
@@ -142,18 +168,26 @@ export class UserService {
     if (!updated) throw new AppError("تغییر رمز عبور ناموفق بود", "update_failed", 500);
   }
 
-  async recordMatch(userId: string, won: boolean): Promise<PublicProfile> {
+  async recordMatch(userId: string, won: boolean, gameId = "uno"): Promise<PublicProfile> {
     const u = await this.users.findById(userId);
     if (!u) throw new AppError("کاربر پیدا نشد", "not_found", 404);
 
+    const earnedXp = won ? 120 : 20;
     const gamesPlayed = u.gamesPlayed + 1;
     const wins = won ? u.wins + 1 : u.wins;
-    const xp = u.xp + (won ? 120 : 20);
+    const xp = u.xp + earnedXp;
     const coins = u.coins + (won ? 50 : 10);
     const winStreak = won ? u.winStreak + 1 : 0;
     const bestWinStreak = won ? Math.max(u.bestWinStreak, winStreak) : u.bestWinStreak;
     const level = levelFromXp(xp);
     const accuracyPct = Math.min(100, Math.round((wins / gamesPlayed) * 100));
+    const gameStats = this.normalizeGameStats(u.gameStats);
+    const currentGameStats = gameStats[gameId] ?? { xp: 0, wins: 0, gamesPlayed: 0 };
+    gameStats[gameId] = {
+      xp: currentGameStats.xp + earnedXp,
+      wins: won ? currentGameStats.wins + 1 : currentGameStats.wins,
+      gamesPlayed: currentGameStats.gamesPlayed + 1,
+    };
 
     const next = await this.users.updateById(userId, {
       gamesPlayed,
@@ -164,8 +198,33 @@ export class UserService {
       bestWinStreak,
       level,
       accuracyPct,
+      gameStats,
     });
     if (!next) throw new AppError("به‌روزرسانی ناموفق", "update_failed", 500);
     return this.toPublic(next);
+  }
+
+  async getLeaderboard(scope: LeaderboardScope, limit: number): Promise<Leaderboard> {
+    const safeLimit = Math.max(1, Math.min(100, limit));
+    const users = await this.users.leaderboard(scope, safeLimit);
+    const entries = users.map((u, index) => {
+      const gameStats = this.normalizeGameStats(u.gameStats);
+      const unoStats = gameStats.uno ?? { xp: 0, wins: 0, gamesPlayed: 0 };
+      const gamesPlayed = scope === "overall" ? u.gamesPlayed : unoStats.gamesPlayed;
+      const wins = scope === "overall" ? u.wins : unoStats.wins;
+
+      return {
+        rank: index + 1,
+        userId: String(u._id),
+        displayName: u.displayName,
+        avatar: u.avatar,
+        xp: scope === "overall" ? u.xp : unoStats.xp,
+        wins,
+        gamesPlayed,
+        accuracyPct: gamesPlayed > 0 ? Math.min(100, Math.round((wins / gamesPlayed) * 100)) : 0,
+      };
+    });
+
+    return { scope, entries };
   }
 }

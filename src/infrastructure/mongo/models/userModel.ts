@@ -14,9 +14,25 @@ export type UserDoc = {
   winStreak: number;
   bestWinStreak: number;
   accuracyPct: number;
+  gameStats?: Record<string, UserGameStats>;
   createdAt: Date;
   updatedAt: Date;
 };
+
+export type UserGameStats = {
+  xp: number;
+  wins: number;
+  gamesPlayed: number;
+};
+
+const gameStatsSchema = new Schema<UserGameStats>(
+  {
+    xp: { type: Number, default: 0 },
+    wins: { type: Number, default: 0 },
+    gamesPlayed: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
 
 const userSchema = new Schema<UserDoc>(
   {
@@ -32,6 +48,7 @@ const userSchema = new Schema<UserDoc>(
     winStreak: { type: Number, default: 0 },
     bestWinStreak: { type: Number, default: 0 },
     accuracyPct: { type: Number, default: 0 },
+    gameStats: { type: Map, of: gameStatsSchema, default: {} },
   },
   { timestamps: true },
 );

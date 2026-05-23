@@ -1,5 +1,6 @@
 import type { UserDoc } from "./models/userModel.js";
 import { UserModel } from "./models/userModel.js";
+import type { SortOrder } from "mongoose";
 
 export type UserPatch = Partial<
   Pick<
@@ -14,8 +15,16 @@ export type UserPatch = Partial<
     | "winStreak"
     | "bestWinStreak"
     | "accuracyPct"
+    | "gameStats"
     | "passwordHash"
   >
+>;
+
+export type LeaderboardScope = "overall" | "uno";
+
+export type LeaderboardUser = Pick<
+  UserDoc,
+  "_id" | "displayName" | "avatar" | "xp" | "wins" | "gamesPlayed" | "accuracyPct" | "gameStats"
 >;
 
 export class UserRepository {
@@ -63,5 +72,16 @@ export class UserRepository {
 
   async updateById(id: string, patch: UserPatch): Promise<UserDoc | null> {
     return UserModel.findByIdAndUpdate(id, { $set: patch }, { new: true }).lean<UserDoc>().exec();
+  }
+
+  async leaderboard(scope: LeaderboardScope, limit: number): Promise<LeaderboardUser[]> {
+    const sort: Record<string, SortOrder> =
+      scope === "overall" ? { xp: -1, wins: -1 } : { "gameStats.uno.xp": -1, "gameStats.uno.wins": -1 };
+    return UserModel.find({})
+      .select("_id displayName avatar xp wins gamesPlayed accuracyPct gameStats")
+      .sort(sort)
+      .limit(limit)
+      .lean<LeaderboardUser[]>()
+      .exec();
   }
 }
