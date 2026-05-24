@@ -7,6 +7,7 @@ import {
   passAfterDraw,
   penalizeMissedUno,
   playCard,
+  removePlayerFromGame,
   startNewGame,
 } from "./gameEngine.js";
 import type { UnoGameState } from "./gameState.js";
@@ -60,6 +61,17 @@ function chooseWildColor(state: UnoGameState, playerId: string): "red" | "yellow
   return (Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] as "red" | "yellow" | "green" | "blue") ?? "red";
 }
 
+function nextActivePlayerId(state: UnoGameState): string | null {
+  if (!state.players.length) return null;
+  let index = state.turnIndex;
+  for (let i = 0; i < state.players.length; i++) {
+    index = ((index + state.direction) % state.players.length + state.players.length) % state.players.length;
+    const player = state.players[index];
+    if (player && !state.eliminatedPlayerIds?.[player.id]) return player.id;
+  }
+  return null;
+}
+
 export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
   id: "uno",
   displayName: "UNO",
@@ -80,10 +92,7 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
       action.type === "playCard" ? state.hands[playerId]?.find((card) => card.id === action.cardId) : null;
     const skippedPlayerId =
       playedCard?.rank === "skip"
-        ? state.players[
-            ((state.turnIndex + state.direction) % state.players.length + state.players.length) %
-              state.players.length
-          ]?.id
+        ? nextActivePlayerId(state)
         : null;
     const result =
       action.type === "playCard"
@@ -104,6 +113,7 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     if (action.type === "playCard" && state.status === "playing") {
       for (const player of state.players) {
         if (player.id === playerId) continue;
+        if (state.eliminatedPlayerIds?.[player.id]) continue;
         if (penalizeMissedUno(state, player.id)) {
           events.push({
             type: "uno.missedPenalty",
@@ -124,11 +134,50 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
   },
 
   handleTurnTimeout(state, playerId) {
-    return applyTurnTimeout(state, playerId);
+    const player = state.players.find((p) => p.id === playerId);
+    const result = applyTurnTimeout(state, playerId);
+    if (!result.ok) return result;
+    const stillPlaying = !state.eliminatedPlayerIds?.[playerId];
+    return {
+      ok: true,
+      events: stillPlaying
+        ? []
+        : [
+            {
+              type: "uno.playerEliminated",
+              payload: {
+                playerId,
+                displayName: player?.displayName ?? "بازیکن",
+                reason: "timeout",
+              },
+            },
+          ],
+    };
+  },
+
+  removePlayer(state, playerId) {
+    const player = state.players.find((p) => p.id === playerId);
+    const result = removePlayerFromGame(state, playerId);
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      events: [
+        {
+          type: "uno.playerEliminated",
+          payload: {
+            playerId,
+            displayName: player?.displayName ?? "بازیکن",
+            reason: "disconnect",
+          },
+        },
+      ],
+    };
   },
 
   getActivePlayerId(state) {
-    return state.players[state.turnIndex]?.id ?? null;
+    const player = state.players[state.turnIndex];
+    if (!player || state.eliminatedPlayerIds?.[player.id]) return null;
+    return player.id;
   },
 
   isFinished(state) {

@@ -11,6 +11,8 @@ export type SocketMeta = {
 export class WsHub {
   private readonly sockets = new Map<WebSocket, SocketMeta>();
   private readonly byRoom = new Map<string, Set<WebSocket>>();
+  private readonly disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly disconnectGraceMs = 4_000;
 
   constructor(private readonly rooms: RoomService) {}
 
@@ -31,6 +33,28 @@ export class WsHub {
     this.byRoom.get(roomId)?.delete(ws);
   }
 
+  private playerKey(roomId: string, playerId: string): string {
+    return `${roomId}:${playerId}`;
+  }
+
+  private clearDisconnectTimer(roomId: string, playerId: string): void {
+    const key = this.playerKey(roomId, playerId);
+    const timer = this.disconnectTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.disconnectTimers.delete(key);
+  }
+
+  private hasOpenPlayerSocket(roomId: string, playerId: string): boolean {
+    const set = this.byRoom.get(roomId);
+    if (!set) return false;
+    for (const ws of set) {
+      const meta = this.sockets.get(ws);
+      if (!meta || meta.playerId !== playerId) continue;
+      if (ws.readyState === WebSocket.OPEN) return true;
+    }
+    return false;
+  }
+
   async authenticate(ws: WebSocket, token: string): Promise<boolean> {
     const sess = await this.rooms.session(token);
     if (!sess) return false;
@@ -44,6 +68,7 @@ export class WsHub {
     const meta: SocketMeta = { roomId: sess.roomId, playerId: sess.playerId, token };
     this.sockets.set(ws, meta);
     this.addToRoom(sess.roomId, ws);
+    this.clearDisconnectTimer(sess.roomId, sess.playerId);
     await this.rooms.setConnected(sess.roomId, sess.playerId, true);
     this.pushRoom(sess.roomId);
     return true;
@@ -54,7 +79,18 @@ export class WsHub {
     if (!meta) return;
     this.sockets.delete(ws);
     this.removeFromRoom(meta.roomId, ws);
+    if (this.hasOpenPlayerSocket(meta.roomId, meta.playerId)) return;
     await this.rooms.handleDisconnect(meta.roomId, meta.playerId);
+    this.pushRoom(meta.roomId);
+
+    const key = this.playerKey(meta.roomId, meta.playerId);
+    this.clearDisconnectTimer(meta.roomId, meta.playerId);
+    const timer = setTimeout(() => {
+      this.disconnectTimers.delete(key);
+      if (this.hasOpenPlayerSocket(meta.roomId, meta.playerId)) return;
+      void this.rooms.eliminateDisconnectedPlayer(meta.roomId, meta.playerId);
+    }, this.disconnectGraceMs);
+    this.disconnectTimers.set(key, timer);
   }
 
   pushRoom(roomId: string) {

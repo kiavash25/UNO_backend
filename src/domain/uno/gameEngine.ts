@@ -16,12 +16,27 @@ function normalizeIndex(i: number, len: number): number {
   return ((i % len) + len) % len;
 }
 
-function stepTurn(turnIndex: number, steps: number, direction: Direction, len: number): number {
-  let i = turnIndex;
-  for (let s = 0; s < steps; s++) {
-    i = normalizeIndex(i + direction, len);
+function isEliminated(state: UnoGameState, playerId: PlayerId): boolean {
+  return !!state.eliminatedPlayerIds?.[playerId];
+}
+
+function activePlayerCount(state: UnoGameState): number {
+  return state.players.filter((p) => !isEliminated(state, p.id)).length;
+}
+
+function stepActiveTurn(state: UnoGameState, steps: number): number {
+  const len = state.players.length;
+  let index = state.turnIndex;
+  let moved = 0;
+  let guard = 0;
+
+  while (moved < steps && guard < len * Math.max(steps, 1) + len) {
+    index = normalizeIndex(index + state.direction, len);
+    guard += 1;
+    if (!isEliminated(state, state.players[index]!.id)) moved += 1;
   }
-  return i;
+
+  return index;
 }
 
 function ensureDeck(state: UnoGameState): void {
@@ -72,9 +87,11 @@ function isDrawStackCard(card: UnoCard, currentColor: Exclude<UnoColor, "black">
 }
 
 function syncPublicPlayers(state: UnoGameState): void {
+  if (!state.eliminatedPlayerIds) state.eliminatedPlayerIds = {};
   state.players = state.players.map((p) => ({
     ...p,
     handCount: state.hands[p.id]?.length ?? 0,
+    eliminated: !!state.eliminatedPlayerIds[p.id],
   }));
 }
 
@@ -119,6 +136,7 @@ export function startNewGame(
     avatar: p.avatar,
     handCount: hands[p.id]!.length,
     saidUno: false,
+    eliminated: false,
   }));
 
   return {
@@ -133,31 +151,32 @@ export function startNewGame(
     winnerId: null,
     pendingDrawPass: null,
     pendingDrawStack: null,
+    turnTimeoutCounts: {},
+    eliminatedPlayerIds: {},
   };
 }
 
 function currentPlayerId(state: UnoGameState): PlayerId {
   const p = state.players[state.turnIndex];
   if (!p) throw new Error("bad turn index");
+  if (isEliminated(state, p.id)) throw new Error("bad turn index");
   return p.id;
 }
 
 function applyCardEffect(state: UnoGameState, played: UnoCard, chosenColor?: Exclude<UnoColor, "black">): void {
-  const n = state.players.length;
-  const dir = state.direction;
   const pendingAmount = state.pendingDrawStack?.amount ?? 0;
 
   if (played.rank === "wild" || played.rank === "wild4") {
     const color = chosenColor ?? "red";
     state.currentColor = color;
     if (played.rank === "wild4") {
-      const targetIndex = stepTurn(state.turnIndex, 1, dir, n);
+      const targetIndex = stepActiveTurn(state, 1);
       const targetId = state.players[targetIndex]!.id;
       state.pendingDrawStack = { playerId: targetId, amount: pendingAmount + 4, color };
       state.turnIndex = targetIndex;
     } else {
       state.pendingDrawStack = null;
-      state.turnIndex = stepTurn(state.turnIndex, 1, dir, n);
+      state.turnIndex = stepActiveTurn(state, 1);
     }
     return;
   }
@@ -167,19 +186,19 @@ function applyCardEffect(state: UnoGameState, played: UnoCard, chosenColor?: Exc
   switch (played.rank) {
     case "skip":
       state.pendingDrawStack = null;
-      state.turnIndex = stepTurn(state.turnIndex, 2, dir, n);
+      state.turnIndex = stepActiveTurn(state, 2);
       break;
     case "reverse":
       state.pendingDrawStack = null;
       state.direction = (state.direction * -1) as Direction;
-      if (n === 2) {
-        state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, n);
+      if (activePlayerCount(state) === 2) {
+        state.turnIndex = stepActiveTurn(state, 1);
       } else {
-        state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, n);
+        state.turnIndex = stepActiveTurn(state, 1);
       }
       break;
     case "draw2": {
-      const targetIndex = stepTurn(state.turnIndex, 1, dir, n);
+      const targetIndex = stepActiveTurn(state, 1);
       const targetId = state.players[targetIndex]!.id;
       state.pendingDrawStack = {
         playerId: targetId,
@@ -191,8 +210,46 @@ function applyCardEffect(state: UnoGameState, played: UnoCard, chosenColor?: Exc
     }
     default:
       state.pendingDrawStack = null;
-      state.turnIndex = stepTurn(state.turnIndex, 1, dir, n);
+      state.turnIndex = stepActiveTurn(state, 1);
   }
+}
+
+export function removePlayerFromGame(state: UnoGameState, playerId: PlayerId): PlayResult {
+  if (state.status !== "playing") return { ok: false, code: "finished", message: "بازی تمام شده است" };
+
+  const eliminatedIndex = state.players.findIndex((p) => p.id === playerId);
+  if (eliminatedIndex < 0) return { ok: false, code: "player", message: "بازیکن در بازی نیست" };
+  if (isEliminated(state, playerId)) return { ok: true, state };
+
+  if (!state.turnTimeoutCounts) state.turnTimeoutCounts = {};
+  if (!state.eliminatedPlayerIds) state.eliminatedPlayerIds = {};
+  state.eliminatedPlayerIds[playerId] = true;
+  delete state.turnTimeoutCounts[playerId];
+
+  if (state.pendingDrawPass === playerId) state.pendingDrawPass = null;
+  if (state.pendingDrawStack?.playerId === playerId) state.pendingDrawStack = null;
+
+  const remaining = state.players.filter((p) => !isEliminated(state, p.id));
+  if (remaining.length <= 1) {
+    state.status = "finished";
+    state.winnerId = remaining[0]?.id ?? null;
+    state.turnIndex = remaining[0]
+      ? state.players.findIndex((p) => p.id === remaining[0]!.id)
+      : 0;
+    syncPublicPlayers(state);
+    return { ok: true, state };
+  }
+
+  if (state.turnIndex === eliminatedIndex) {
+    state.turnIndex = stepActiveTurn(state, 1);
+  }
+  syncPublicPlayers(state);
+  return { ok: true, state };
+}
+
+function resetTurnTimeoutCount(state: UnoGameState, playerId: PlayerId): void {
+  if (!state.turnTimeoutCounts) state.turnTimeoutCounts = {};
+  state.turnTimeoutCounts[playerId] = 0;
 }
 
 export function playCard(
@@ -229,6 +286,7 @@ export function playCard(
   }
 
   hand.splice(idx, 1);
+  resetTurnTimeoutCount(state, playerId);
 
   state.discardPile.push(card);
   state.pendingDrawPass = null;
@@ -261,17 +319,19 @@ export function drawCard(state: UnoGameState, playerId: PlayerId): PlayResult {
   if (state.pendingDrawStack) {
     if (state.pendingDrawStack.playerId !== playerId) return { ok: false, code: "turn", message: "نوبت شما نیست" };
     drawN(state, playerId, state.pendingDrawStack.amount);
+    resetTurnTimeoutCount(state, playerId);
     state.pendingDrawStack = null;
     state.pendingDrawPass = null;
-    state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, state.players.length);
+    state.turnIndex = stepActiveTurn(state, 1);
     syncPublicPlayers(state);
     return { ok: true, state };
   }
   if (state.pendingDrawPass === playerId) return { ok: false, code: "draw", message: "یک بار کارت کشیده‌اید؛ بازی کنید یا پاس دهید" };
 
   drawForPlayer(state, playerId);
+  resetTurnTimeoutCount(state, playerId);
   state.pendingDrawPass = null;
-  state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, state.players.length);
+  state.turnIndex = stepActiveTurn(state, 1);
   syncPublicPlayers(state);
   return { ok: true, state };
 }
@@ -282,8 +342,8 @@ export function passAfterDraw(state: UnoGameState, playerId: PlayerId): PlayResu
   if (state.pendingDrawPass !== playerId) return { ok: false, code: "pass", message: "نیازی به پاس نیست" };
 
   state.pendingDrawPass = null;
-  const n = state.players.length;
-  state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, n);
+  resetTurnTimeoutCount(state, playerId);
+  state.turnIndex = stepActiveTurn(state, 1);
   syncPublicPlayers(state);
   return { ok: true, state };
 }
@@ -292,16 +352,24 @@ export function applyTurnTimeout(state: UnoGameState, playerId: PlayerId): PlayR
   if (state.status !== "playing") return { ok: false, code: "finished", message: "بازی تمام شده است" };
   if (currentPlayerId(state) !== playerId) return { ok: false, code: "turn", message: "نوبت شما نیست" };
 
+  if (!state.turnTimeoutCounts) state.turnTimeoutCounts = {};
+  const nextTimeoutCount = (state.turnTimeoutCounts[playerId] ?? 0) + 1;
+  state.turnTimeoutCounts[playerId] = nextTimeoutCount;
+  if (nextTimeoutCount >= 2) {
+    return removePlayerFromGame(state, playerId);
+  }
+
   drawForPlayer(state, playerId);
   state.pendingDrawPass = null;
   state.pendingDrawStack = null;
-  state.turnIndex = stepTurn(state.turnIndex, 1, state.direction, state.players.length);
+  state.turnIndex = stepActiveTurn(state, 1);
   syncPublicPlayers(state);
   return { ok: true, state };
 }
 
 export function callUno(state: UnoGameState, playerId: PlayerId): PlayResult {
   if (state.status !== "playing") return { ok: false, code: "finished", message: "بازی تمام شده است" };
+  if (isEliminated(state, playerId)) return { ok: false, code: "player", message: "بازیکن از مسابقه خارج شده است" };
   const hand = state.hands[playerId];
   if (!hand) return { ok: false, code: "player", message: "بازیکن نامعتبر" };
   if (hand.length !== 1) return { ok: false, code: "uno", message: "فقط با یک کارت می‌توان UNO گفت" };

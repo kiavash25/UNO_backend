@@ -12,6 +12,7 @@ export type UnoPublicPlayer = {
   avatar?: string;
   handCount: number;
   saidUno: boolean;
+  eliminated?: boolean;
 };
 
 export type UnoDrawStack = {
@@ -36,4 +37,6 @@ export type UnoGameState = {
   /** اگر بازیکن کارت کشیده و هنوز pass نکرده */
   pendingDrawPass: PlayerId | null;
   pendingDrawStack: UnoDrawStack | null;
+  turnTimeoutCounts: Record<PlayerId, number>;
+  eliminatedPlayerIds: Record<PlayerId, boolean>;
 };

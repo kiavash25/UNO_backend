@@ -130,9 +130,10 @@ export class RoomService {
     const result = game.handleTurnTimeout(state.game, playerId);
     if (!result.ok) return;
 
+    const eliminated = result.events?.some((event) => event.type === "uno.playerEliminated") ?? false;
     this.handleGameEvents(state, [
       ...(result.events ?? []),
-      { type: "game.turnTimedOut", payload: { playerId, penaltyCards: 1 } },
+      ...(eliminated ? [] : [{ type: "game.turnTimedOut", payload: { playerId, penaltyCards: 1 } }]),
     ]);
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
@@ -445,6 +446,24 @@ export class RoomService {
     p.connected = false;
     this.bump(state);
     await this.persist(state);
+  }
+
+  async eliminateDisconnectedPlayer(roomId: string, playerId: string): Promise<void> {
+    const state = await this.live.load(roomId);
+    if (!state) return;
+
+    const p = state.players.find((x) => x.id === playerId);
+    if (!p || p.connected) return;
+    if (state.phase === "playing" && state.game) {
+      const game = this.gameForRoom(state);
+      const result = game.removePlayer?.(state.game, playerId);
+      if (result?.ok) {
+        this.handleGameEvents(state, result.events);
+        if (game.isFinished(state.game)) state.phase = "finished";
+      }
+    }
+    this.bump(state);
+    await this.persist(state, { resetTurnTimer: true });
   }
 
   async setReady(token: string, ready: boolean): Promise<void> {
