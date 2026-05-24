@@ -3,7 +3,7 @@ import { createShuffledDeck, shuffle } from "./deck.js";
 import type { Direction, PlayerId, UnoGameState, UnoPublicPlayer } from "./gameState.js";
 
 export type PlayResult =
-  | { ok: true; state: UnoGameState }
+  | { ok: true; state: UnoGameState; penaltyCards?: number }
   | { ok: false; code: string; message: string };
 
 function topDiscard(state: UnoGameState): UnoCard {
@@ -359,12 +359,17 @@ export function applyTurnTimeout(state: UnoGameState, playerId: PlayerId): PlayR
     return removePlayerFromGame(state, playerId);
   }
 
-  drawForPlayer(state, playerId);
+  const pendingPenalty =
+    state.pendingDrawStack?.playerId === playerId
+      ? state.pendingDrawStack.amount
+      : 0;
+  const penaltyCards = pendingPenalty + 1;
+  drawN(state, playerId, penaltyCards);
   state.pendingDrawPass = null;
   state.pendingDrawStack = null;
   state.turnIndex = stepActiveTurn(state, 1);
   syncPublicPlayers(state);
-  return { ok: true, state };
+  return { ok: true, state, penaltyCards };
 }
 
 export function callUno(state: UnoGameState, playerId: PlayerId): PlayResult {

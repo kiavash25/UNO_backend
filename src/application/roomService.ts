@@ -138,7 +138,9 @@ export class RoomService {
     const eliminated = result.events?.some((event) => event.type === "uno.playerEliminated") ?? false;
     this.handleGameEvents(state, [
       ...(result.events ?? []),
-      ...(eliminated ? [] : [{ type: "game.turnTimedOut", payload: { playerId, penaltyCards: 1 } }]),
+      ...(eliminated
+        ? []
+        : [{ type: "game.turnTimedOut", payload: { playerId, penaltyCards: result.penaltyCards ?? 1 } }]),
     ]);
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);

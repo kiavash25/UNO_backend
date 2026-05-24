@@ -17,7 +17,7 @@ export type CardGameEvent = {
 };
 
 export type CardGameActionResult =
-  | { ok: true; events?: CardGameEvent[] }
+  | { ok: true; events?: CardGameEvent[]; penaltyCards?: number }
   | { ok: false; code: string; message: string };
 
 export type BotTurnContext = {
