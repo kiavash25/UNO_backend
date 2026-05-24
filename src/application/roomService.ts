@@ -77,8 +77,7 @@ export class RoomService {
   private resetTurnDeadline(state: LiveRoomState): void {
     const game = state.game ? this.gameForRoom(state) : null;
     const activePlayerId = state.game && game ? game.getActivePlayerId(state.game) : null;
-    const turnTimeoutMs = Math.max(1, state.settings.turnTimeoutSec) * 1000 || this.turnTimeoutMs;
-    state.turnDeadlineAt = state.phase === "playing" && activePlayerId ? Date.now() + turnTimeoutMs : null;
+    state.turnDeadlineAt = state.phase === "playing" && activePlayerId ? Date.now() + this.turnTimeoutMs : null;
   }
 
   private gameDefinition(gameId: string): CardGameDefinition {
@@ -198,7 +197,7 @@ export class RoomService {
       maxPlayers: partial.maxPlayers ?? Math.min(4, game.maxPlayers),
       mode: partial.mode ?? "classic",
       isPrivate: partial.isPrivate ?? true,
-      turnTimeoutSec: partial.mode === "fast" ? 30 : 120,
+      turnTimeoutSec: 10,
     };
   }
 
