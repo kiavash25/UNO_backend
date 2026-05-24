@@ -141,7 +141,7 @@ export function startNewGame(
 
   return {
     status: "playing",
-    turnIndex: 0,
+    turnIndex: Math.floor(Math.random() * players.length),
     direction: 1,
     drawPile: deck,
     discardPile: discard,

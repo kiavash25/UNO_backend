@@ -156,8 +156,8 @@ export class RoomService {
       const lobbyPlayer = state.players.find((p) => p.id === activePlayerId);
       if (!lobbyPlayer?.isBot) return;
 
-      const base = state.settings.mode === "fast" ? 700 : 1100;
-      const extra = state.settings.mode === "fast" ? 1600 : 2800;
+      const base = state.settings.mode === "fast" ? 400 : 900;
+      const extra = state.settings.mode === "fast" ? 1000 : 1800;
       const delayMs = base + Math.floor(Math.random() * extra);
       const lockedVersion = state.version;
 
