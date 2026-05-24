@@ -14,4 +14,5 @@ export function newPlayerId(): string {
 export type SessionPayload = {
   roomId: string;
   playerId: string;
+  userId?: string;
 };

@@ -9,5 +9,6 @@ export type LiveRoomState = {
   phase: RoomPhase;
   game: unknown | null;
   turnDeadlineAt: number | null;
+  matchRewardsClaimed?: Record<string, boolean>;
   version: number;
 };

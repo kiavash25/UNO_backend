@@ -26,6 +26,11 @@ export type JoinRoomResult = {
 
 export type BotMatchResult = CreateRoomResult;
 
+export type ClaimedMatchResult = {
+  won: boolean;
+  gameId: string;
+};
+
 export type PublicRoomSummary = {
   code: string;
   gameId: string;
@@ -202,7 +207,7 @@ export class RoomService {
     };
   }
 
-  async createRoom(hostDisplayName: string, avatar: string | undefined, input: Partial<RoomSettings> & { name: string }): Promise<CreateRoomResult> {
+  async createRoom(hostDisplayName: string, avatar: string | undefined, input: Partial<RoomSettings> & { name: string }, userId?: string): Promise<CreateRoomResult> {
     const settings = this.defaultSettings(input);
     const game = this.gameDefinition(settings.gameId);
     if (settings.maxPlayers < game.minPlayers || settings.maxPlayers > game.maxPlayers) {
@@ -241,17 +246,18 @@ export class RoomService {
       phase: "lobby",
       game: null,
       turnDeadlineAt: null,
+      matchRewardsClaimed: {},
       version: 1,
     };
 
     const playerToken = newPlayerToken();
     await this.persist(state);
-    await this.sessions.save(playerToken, { roomId, playerId: hostId });
+    await this.sessions.save(playerToken, { roomId, playerId: hostId, userId });
 
     return { roomId, code, playerToken, playerId: hostId };
   }
 
-  async joinRoom(codeRaw: string, displayName: string, avatar?: string): Promise<JoinRoomResult> {
+  async joinRoom(codeRaw: string, displayName: string, avatar?: string, userId?: string): Promise<JoinRoomResult> {
     const code = codeRaw.toUpperCase();
     let roomId = await this.live.findRoomIdByCode(code);
     if (!roomId) {
@@ -281,7 +287,7 @@ export class RoomService {
     this.bump(state);
     const playerToken = newPlayerToken();
     await this.persist(state);
-    await this.sessions.save(playerToken, { roomId, playerId });
+    await this.sessions.save(playerToken, { roomId, playerId, userId });
 
     return { roomId, code: state.code, playerToken, playerId };
   }
@@ -326,10 +332,11 @@ export class RoomService {
     displayName: string,
     avatar?: string,
     gameId = "uno",
+    userId?: string,
   ): Promise<(CreateRoomResult | JoinRoomResult) & { created: boolean }> {
     const open = (await this.listPublicRooms()).filter((room) => room.gameId === gameId);
     if (open.length > 0) {
-      const joined = await this.joinRoom(open[0]!.code, displayName, avatar);
+      const joined = await this.joinRoom(open[0]!.code, displayName, avatar, userId);
       return { ...joined, created: false };
     }
 
@@ -339,11 +346,11 @@ export class RoomService {
       maxPlayers: 4,
       mode: "fast",
       isPrivate: false,
-    });
+    }, userId);
     return { ...created, created: true };
   }
 
-  async createBotMatch(displayName: string, totalPlayers: number, avatar?: string, gameId = "uno"): Promise<BotMatchResult> {
+  async createBotMatch(displayName: string, totalPlayers: number, avatar?: string, gameId = "uno", userId?: string): Promise<BotMatchResult> {
     const game = this.gameDefinition(gameId);
     if (!game.chooseBotAction) throw new AppError("این بازی فعلا بات ندارد", "unsupported_bot", 400);
     if (totalPlayers < game.minPlayers || totalPlayers > Math.min(4, game.maxPlayers)) {
@@ -356,7 +363,7 @@ export class RoomService {
       maxPlayers: totalPlayers,
       mode: "classic",
       isPrivate: true,
-    });
+    }, userId);
 
     const state = await this.live.load(created.roomId);
     if (!state) throw new AppError("اتاق پیدا نشد", "not_found", 404);
@@ -543,6 +550,37 @@ export class RoomService {
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+  }
+
+  async claimMatchResult(token: string, userId: string): Promise<ClaimedMatchResult> {
+    const sess = await this.sessions.get(token);
+    if (!sess) throw new AppError("نشست نامعتبر است", "unauthorized", 401);
+    if (!sess.userId || sess.userId !== userId) {
+      throw new AppError("این بازی به حساب شما وصل نیست", "forbidden", 403);
+    }
+
+    const state = await this.live.load(sess.roomId);
+    if (!state || !state.game) throw new AppError("بازی پیدا نشد", "not_found", 404);
+    if (state.phase !== "finished") throw new AppError("بازی هنوز تمام نشده است", "bad_phase", 409);
+
+    const gameId = state.settings.gameId ?? "uno";
+    const game = this.gameForRoom(state);
+    if (!game.getPlayerResult) throw new AppError("ثبت نتیجه برای این بازی پشتیبانی نمی‌شود", "unsupported_game", 400);
+
+    const result = game.getPlayerResult(state.game, sess.playerId);
+    if (!result.eligible) {
+      throw new AppError("بازیکن خارج‌شده امتیاز نمی‌گیرد", "not_eligible", 403);
+    }
+
+    state.matchRewardsClaimed ??= {};
+    if (state.matchRewardsClaimed[sess.playerId]) {
+      throw new AppError("امتیاز این بازی قبلاً ثبت شده است", "already_recorded", 409);
+    }
+    state.matchRewardsClaimed[sess.playerId] = true;
+    this.bump(state);
+    await this.persist(state);
+
+    return { won: result.won, gameId };
   }
 
   private async requirePlayingSession(token: string): Promise<{ state: LiveRoomState; playerId: string }> {

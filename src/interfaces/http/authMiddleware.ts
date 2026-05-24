@@ -17,3 +17,20 @@ export function bearerAuth(userService: UserService) {
     }
   };
 }
+
+export function optionalBearerAuth(userService: UserService) {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    const raw = req.headers.authorization;
+    const token = raw?.startsWith("Bearer ") ? raw.slice(7).trim() : null;
+    if (!token) {
+      next();
+      return;
+    }
+    try {
+      req.authed = await userService.verifyAccessToken(token);
+    } catch {
+      // Guest room entry should still work when an optional token is stale.
+    }
+    next();
+  };
+}

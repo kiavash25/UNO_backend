@@ -26,10 +26,10 @@ export function createHttpApp(deps: HttpAppDeps) {
   });
 
   app.use("/api/auth", createAuthRouter(userService));
-  app.use("/api", createUserRouter(userService));
+  app.use("/api", createUserRouter(userService, roomService));
   app.use("/api/bots", createBotRouter());
   app.use("/api/games", createGameRouter());
-  app.use("/api/rooms", createRoomRouter(roomService));
+  app.use("/api/rooms", createRoomRouter(roomService, userService));
   app.use(handleHttpError);
 
   return app;

@@ -1,5 +1,6 @@
 import type express from "express";
 import { z } from "zod";
+import type { RoomService } from "../../../application/roomService.js";
 import type { UserService } from "../../../application/userService.js";
 
 const patchMeBody = z.object({
@@ -13,8 +14,7 @@ const changePasswordBody = z.object({
 });
 
 const matchBody = z.object({
-  won: z.boolean(),
-  gameId: z.enum(["uno"]).optional(),
+  playerToken: z.string().min(1).max(128),
 });
 
 const leaderboardParams = z.object({
@@ -26,7 +26,10 @@ const leaderboardQuery = z.object({
 });
 
 export class UserController {
-  constructor(private readonly users: UserService) {}
+  constructor(
+    private readonly users: UserService,
+    private readonly rooms: RoomService,
+  ) {}
 
   me: express.RequestHandler = async (req, res) => {
     const user = await this.users.getProfile(req.authed!.userId);
@@ -47,7 +50,8 @@ export class UserController {
 
   recordMatch: express.RequestHandler = async (req, res) => {
     const body = matchBody.parse(req.body);
-    const user = await this.users.recordMatch(req.authed!.userId, body.won, body.gameId ?? "uno");
+    const result = await this.rooms.claimMatchResult(body.playerToken, req.authed!.userId);
+    const user = await this.users.recordMatch(req.authed!.userId, result.won, result.gameId);
     res.json(user);
   };
 

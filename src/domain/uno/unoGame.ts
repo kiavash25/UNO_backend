@@ -174,6 +174,13 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     };
   },
 
+  getPlayerResult(state, playerId) {
+    const player = state.players.find((p) => p.id === playerId);
+    const eliminated = !!state.eliminatedPlayerIds?.[playerId];
+    const eligible = state.status === "finished" && !!state.winnerId && !!player && !eliminated;
+    return { eligible, won: eligible && state.winnerId === playerId };
+  },
+
   getActivePlayerId(state) {
     const player = state.players[state.turnIndex];
     if (!player || state.eliminatedPlayerIds?.[player.id]) return null;

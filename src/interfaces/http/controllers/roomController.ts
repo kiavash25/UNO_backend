@@ -46,13 +46,13 @@ export class RoomController {
       maxPlayers: body.maxPlayers,
       mode: body.mode,
       isPrivate: body.isPrivate,
-    });
+    }, req.authed?.userId);
     res.status(201).json(result);
   };
 
   join: express.RequestHandler = async (req, res) => {
     const body = joinBody.parse(req.body);
-    const result = await this.rooms.joinRoom(body.code, body.displayName, body.avatar);
+    const result = await this.rooms.joinRoom(body.code, body.displayName, body.avatar, req.authed?.userId);
     res.status(200).json(result);
   };
 
@@ -63,13 +63,13 @@ export class RoomController {
 
   quickPlay: express.RequestHandler = async (req, res) => {
     const body = quickPlayBody.parse(req.body);
-    const result = await this.rooms.quickPlay(body.displayName, body.avatar, body.gameId);
+    const result = await this.rooms.quickPlay(body.displayName, body.avatar, body.gameId, req.authed?.userId);
     res.status(result.created ? 201 : 200).json(result);
   };
 
   createBotMatch: express.RequestHandler = async (req, res) => {
     const body = botMatchBody.parse(req.body);
-    const result = await this.rooms.createBotMatch(body.displayName, body.totalPlayers, body.avatar, body.gameId);
+    const result = await this.rooms.createBotMatch(body.displayName, body.totalPlayers, body.avatar, body.gameId, req.authed?.userId);
     res.status(201).json(result);
   };
 
@@ -82,4 +82,3 @@ export class RoomController {
     res.json(info);
   };
 }
-
