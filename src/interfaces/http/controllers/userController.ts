@@ -51,7 +51,7 @@ export class UserController {
   recordMatch: express.RequestHandler = async (req, res) => {
     const body = matchBody.parse(req.body);
     const result = await this.rooms.claimMatchResult(body.playerToken, req.authed!.userId);
-    const user = await this.users.recordMatch(req.authed!.userId, result.won, result.gameId);
+    const user = await this.users.recordMatch(req.authed!.userId, result);
     res.json(user);
   };
 

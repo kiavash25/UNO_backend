@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import type { JwtService } from "../infrastructure/auth/jwt.js";
+import { getRankReward } from "../domain/cardGame/gameScoring.js";
 import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/userModel.js";
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
 import { AppError } from "./errors.js";
@@ -29,6 +30,14 @@ export type PublicProfile = {
   accuracyPct: number;
   gameStats: Record<string, UserGameStats>;
   createdAt: Date;
+};
+
+export type MatchRewardContext = {
+  won: boolean;
+  gameId: string;
+  rank: number;
+  totalPlayers: number;
+  isPrivate: boolean;
 };
 
 export type LeaderboardScope = "overall" | "uno";
@@ -168,15 +177,18 @@ export class UserService {
     if (!updated) throw new AppError("تغییر رمز عبور ناموفق بود", "update_failed", 500);
   }
 
-  async recordMatch(userId: string, won: boolean, gameId = "uno"): Promise<PublicProfile> {
+  async recordMatch(userId: string, result: MatchRewardContext): Promise<PublicProfile> {
     const u = await this.users.findById(userId);
     if (!u) throw new AppError("کاربر پیدا نشد", "not_found", 404);
 
-    const earnedXp = won ? 120 : 20;
+    const reward = getRankReward(result.gameId, result.rank, result.totalPlayers, result.isPrivate);
+    const earnedXp = reward.xp;
+    const won = result.won;
+    const gameId = result.gameId;
     const gamesPlayed = u.gamesPlayed + 1;
     const wins = won ? u.wins + 1 : u.wins;
     const xp = u.xp + earnedXp;
-    const coins = u.coins + (won ? 50 : 10);
+    const coins = u.coins + reward.coins;
     const winStreak = won ? u.winStreak + 1 : 0;
     const bestWinStreak = won ? Math.max(u.bestWinStreak, winStreak) : u.bestWinStreak;
     const level = levelFromXp(xp);

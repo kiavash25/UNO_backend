@@ -1,4 +1,5 @@
 import type { CardGameAction, CardGameDefinition, CardGameEvent } from "../domain/cardGame/cardGame.js";
+import { getRankReward } from "../domain/cardGame/gameScoring.js";
 import { getCardGame } from "../domain/cardGame/gameRegistry.js";
 import { RoomRepository } from "../infrastructure/mongo/roomRepository.js";
 import { LiveRoomStore } from "../infrastructure/redis/liveRoomStore.js";
@@ -29,6 +30,9 @@ export type BotMatchResult = CreateRoomResult;
 export type ClaimedMatchResult = {
   won: boolean;
   gameId: string;
+  rank: number;
+  totalPlayers: number;
+  isPrivate: boolean;
 };
 
 export type PublicRoomSummary = {
@@ -42,12 +46,64 @@ export type PublicRoomSummary = {
   isPrivate: boolean;
 };
 
+export type MatchRewardSummary = {
+  playerId: string;
+  rank: number;
+  xp: number;
+  coins: number;
+};
+
 export type RoomEvents = {
   onRoomChanged?: (roomId: string) => void;
   onUnoDeclared?: (roomId: string, playerId: string, displayName: string) => void;
   onGameEvent?: (roomId: string, event: CardGameEvent) => void;
   onRoomDestroyed?: (roomId: string) => void;
 };
+
+type RankableGameState = {
+  winnerId?: string | null;
+  players?: { id: string; displayName?: string; handCount?: number; eliminated?: boolean }[];
+  eliminatedPlayerIds?: Record<string, boolean>;
+};
+
+function getRewardRanking(gameState: unknown): string[] {
+  const state = gameState as RankableGameState;
+  const players = Array.isArray(state.players) ? state.players : [];
+  const eligiblePlayers = players.filter((player) => !player.eliminated && !state.eliminatedPlayerIds?.[player.id]);
+  const winner = eligiblePlayers.find((player) => player.id === state.winnerId);
+  const rest = eligiblePlayers
+    .filter((player) => player.id !== state.winnerId)
+    .sort((a, b) => {
+      const handCountDelta = (a.handCount ?? 0) - (b.handCount ?? 0);
+      if (handCountDelta !== 0) return handCountDelta;
+      return (a.displayName ?? "").localeCompare(b.displayName ?? "", "fa");
+    });
+
+  return [...(winner ? [winner] : []), ...rest].map((player) => player.id);
+}
+
+function buildMatchRewards(state: LiveRoomState): MatchRewardSummary[] {
+  if (!state.game) return [];
+  const ranking = getRewardRanking(state.game);
+  const totalPlayers = ranking.length || state.players.length || state.settings.maxPlayers;
+
+  return ranking.map((playerId, index) => {
+    const rank = index + 1;
+    const reward = getRankReward(
+      state.settings.gameId ?? "uno",
+      rank,
+      totalPlayers,
+      state.settings.isPrivate,
+    );
+
+    return {
+      playerId,
+      rank,
+      xp: reward.xp,
+      coins: reward.coins,
+    };
+  });
+}
 
 export class RoomService {
   private readonly botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -582,7 +638,12 @@ export class RoomService {
     this.bump(state);
     await this.persist(state);
 
-    return { won: result.won, gameId };
+    const matchRewards = buildMatchRewards(state);
+    const playerReward = matchRewards.find((reward) => reward.playerId === sess.playerId);
+    const rank = playerReward?.rank ?? (result.won ? 1 : Math.max(2, matchRewards.length));
+    const totalPlayers = matchRewards.length || state.players.length || state.settings.maxPlayers;
+
+    return { won: result.won, gameId, rank, totalPlayers, isPrivate: state.settings.isPrivate };
   }
 
   private async requirePlayingSession(token: string): Promise<{ state: LiveRoomState; playerId: string }> {
@@ -610,5 +671,6 @@ export function clientRoomView(state: LiveRoomState, viewerId: string) {
     serverNow: Date.now(),
     turnDeadlineAt: state.turnDeadlineAt ?? null,
     game: state.game && game ? game.projectStateForPlayer(state.game, viewerId) : null,
+    matchRewards: state.phase === "finished" ? buildMatchRewards(state) : [],
   };
 }
