@@ -1,11 +1,14 @@
 /** آواتارهای پیش‌فرض (هم‌نام با فرانت). */
 
-import { AVATAR_OPTIONS } from "../constant/avatar.cons.js";
+import { AVATAR_OPTIONS, LEGACY_AVATAR_OPTIONS } from "../constant/avatar.cons.js";
 
 export type AvatarId = (typeof AVATAR_OPTIONS)[number];
 
 export function isAllowedAvatar(s: string): s is AvatarId {
-  return (AVATAR_OPTIONS as readonly string[]).includes(s);
+  return (
+    (AVATAR_OPTIONS as readonly string[]).includes(s) ||
+    (LEGACY_AVATAR_OPTIONS as readonly string[]).includes(s)
+  );
 }
 
 const XP_PER_LEVEL = 500;

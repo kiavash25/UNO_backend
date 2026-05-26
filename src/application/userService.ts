@@ -10,7 +10,7 @@ import {
   rankTitleForLevel,
   xpProgress,
 } from "./userProfile.js";
-import { AVATAR_OPTIONS } from "../constant/avatar.cons.js";
+import { AVATAR_OPTIONS, normalizeAvatar } from "../constant/avatar.cons.js";
 
 export type PublicProfile = {
   id: string;
@@ -81,7 +81,7 @@ export class UserService {
       id: String(user._id),
       phone: user.phone,
       displayName: user.displayName,
-      avatar: user.avatar,
+      avatar: normalizeAvatar(user.avatar),
       xp: user.xp,
       level,
       xpIntoLevel,
@@ -104,7 +104,7 @@ export class UserService {
     if (avatarId !== undefined && !isAllowedAvatar(avatarId)) throw new AppError("آواتار نامعتبر است", "bad_avatar");
 
     const passwordHash = await bcrypt.hash(password, this.bcryptCost);
-    const avatar = avatarId ?? AVATAR_OPTIONS[0]!;
+    const avatar = avatarId ? normalizeAvatar(avatarId) : AVATAR_OPTIONS[0]!;
     const doc = await this.users.create({
       phone: phone.trim(),
       passwordHash,
@@ -151,7 +151,7 @@ export class UserService {
     }
     if (patch.avatar !== undefined) {
       if (!isAllowedAvatar(patch.avatar)) throw new AppError("آواتار نامعتبر است", "bad_avatar");
-      update.avatar = patch.avatar;
+      update.avatar = normalizeAvatar(patch.avatar);
     }
 
     if (Object.keys(update).length === 0) return this.toPublic(u);
@@ -229,7 +229,7 @@ export class UserService {
         rank: index + 1,
         userId: String(u._id),
         displayName: u.displayName,
-        avatar: u.avatar,
+        avatar: normalizeAvatar(u.avatar),
         xp: scope === "overall" ? u.xp : unoStats.xp,
         wins,
         gamesPlayed,
