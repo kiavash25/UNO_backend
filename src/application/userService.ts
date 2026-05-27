@@ -1,12 +1,11 @@
 import bcrypt from "bcryptjs";
 import type { JwtService } from "../infrastructure/auth/jwt.js";
-import { getRankReward } from "../domain/cardGame/gameScoring.js";
 import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/userModel.js";
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
 import { AppError } from "./errors.js";
+import { buildMatchRewardPatch } from "./matchRewardProgress.js";
 import {
   isAllowedAvatar,
-  levelFromXp,
   rankTitleForLevel,
   xpProgress,
 } from "./userProfile.js";
@@ -181,37 +180,7 @@ export class UserService {
     const u = await this.users.findById(userId);
     if (!u) throw new AppError("کاربر پیدا نشد", "not_found", 404);
 
-    const reward = getRankReward(result.gameId, result.rank, result.totalPlayers, result.isPrivate);
-    const earnedXp = reward.xp;
-    const won = result.won;
-    const gameId = result.gameId;
-    const gamesPlayed = u.gamesPlayed + 1;
-    const wins = won ? u.wins + 1 : u.wins;
-    const xp = u.xp + earnedXp;
-    const coins = u.coins + reward.coins;
-    const winStreak = won ? u.winStreak + 1 : 0;
-    const bestWinStreak = won ? Math.max(u.bestWinStreak, winStreak) : u.bestWinStreak;
-    const level = levelFromXp(xp);
-    const accuracyPct = Math.min(100, Math.round((wins / gamesPlayed) * 100));
-    const gameStats = this.normalizeGameStats(u.gameStats);
-    const currentGameStats = gameStats[gameId] ?? { xp: 0, wins: 0, gamesPlayed: 0 };
-    gameStats[gameId] = {
-      xp: currentGameStats.xp + earnedXp,
-      wins: won ? currentGameStats.wins + 1 : currentGameStats.wins,
-      gamesPlayed: currentGameStats.gamesPlayed + 1,
-    };
-
-    const next = await this.users.updateById(userId, {
-      gamesPlayed,
-      wins,
-      xp,
-      coins,
-      winStreak,
-      bestWinStreak,
-      level,
-      accuracyPct,
-      gameStats,
-    });
+    const next = await this.users.updateById(userId, buildMatchRewardPatch(u, result));
     if (!next) throw new AppError("به‌روزرسانی ناموفق", "update_failed", 500);
     return this.toPublic(next);
   }

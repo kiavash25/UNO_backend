@@ -10,7 +10,9 @@ import type { LiveRoomState } from "./liveRoomState.js";
 import { generateRoomCode } from "./roomCode.js";
 import type { LobbyPlayer, RoomSettings } from "./roomTypes.js";
 import { AppError } from "./errors.js";
+import { buildMatchRewardPatch } from "./matchRewardProgress.js";
 import { newPlayerId, newPlayerToken, type SessionPayload } from "./session.js";
+import type { MatchRewardContext } from "./userService.js";
 import type { GameAnalyticsService } from "./gameAnalyticsService.js";
 
 export type CreateRoomResult = {
@@ -250,6 +252,7 @@ export class RoomService {
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    await this.applyBotRewardsIfFinished(state);
     this.trackUnoActionAndFinish({
       state,
       playerId,
@@ -315,6 +318,7 @@ export class RoomService {
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    await this.applyBotRewardsIfFinished(state);
     this.trackUnoActionAndFinish({
       state,
       playerId: botId,
@@ -644,6 +648,7 @@ export class RoomService {
     }
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    await this.applyBotRewardsIfFinished(state);
     if (state.phase === "finished") {
       this.trackAnalytics(this.analytics?.finishGame(state, buildMatchRewards(state)) ?? Promise.resolve());
     }
@@ -730,6 +735,7 @@ export class RoomService {
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    await this.applyBotRewardsIfFinished(state);
     this.trackUnoActionAndFinish({
       state,
       playerId: sess.playerId,
@@ -776,6 +782,52 @@ export class RoomService {
     const totalPlayers = matchRewards.length || state.players.length || state.settings.maxPlayers;
 
     return { won: result.won, gameId, rank, totalPlayers, isPrivate: state.settings.isPrivate };
+  }
+
+  private async applyBotRewardsIfFinished(state: LiveRoomState): Promise<void> {
+    if (state.phase !== "finished" || !state.game) return;
+    const game = this.gameForRoom(state);
+    if (!game.getPlayerResult) return;
+
+    state.matchRewardsClaimed ??= {};
+    const rewards = buildMatchRewards(state);
+    const totalPlayers = rewards.length || state.players.length || state.settings.maxPlayers;
+    let changed = false;
+
+    for (const reward of rewards) {
+      const player = state.players.find((p) => p.id === reward.playerId);
+      if (!player?.isBot) continue;
+      if (state.matchRewardsClaimed[player.id]) continue;
+
+      const botProfileId = player.profile?.id;
+      if (!botProfileId?.startsWith("bot:")) continue;
+      const userId = botProfileId.slice(4);
+      if (!userId) continue;
+
+      const user = await this.users.findById(userId);
+      if (!user) continue;
+
+      const playerResult = game.getPlayerResult(state.game, player.id);
+      if (!playerResult.eligible) continue;
+
+      const patch = buildMatchRewardPatch(user, {
+        won: playerResult.won,
+        gameId: state.settings.gameId ?? "uno",
+        rank: reward.rank,
+        totalPlayers,
+        isPrivate: state.settings.isPrivate,
+      } satisfies MatchRewardContext);
+      const updated = await this.users.updateById(userId, patch);
+      if (!updated) continue;
+
+      state.matchRewardsClaimed[player.id] = true;
+      changed = true;
+    }
+
+    if (changed) {
+      this.bump(state);
+      await this.persist(state);
+    }
   }
 
   private async requirePlayingSession(token: string): Promise<{ state: LiveRoomState; playerId: string }> {
