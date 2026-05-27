@@ -14,14 +14,19 @@ function parseJson(raw: WebSocket.RawData): unknown {
   return JSON.parse(raw.toString());
 }
 
-async function authenticateFirstMessage(deps: WsConnectionDeps, ws: WebSocket, parsed: unknown): Promise<boolean> {
+async function authenticateFirstMessage(
+  deps: WsConnectionDeps,
+  ws: WebSocket,
+  parsed: unknown,
+  userAgent?: string,
+): Promise<boolean> {
   const first = authMessageSchema.safeParse(parsed);
   if (!first.success) {
     deps.hub.sendError(ws, "auth", "ابتدا پیام auth بفرستید");
     return false;
   }
 
-  const ok = await deps.hub.authenticate(ws, first.data.token);
+  const ok = await deps.hub.authenticate(ws, first.data.token, userAgent);
   if (!ok) {
     deps.hub.sendError(ws, "auth", "توکن نامعتبر است");
     ws.close();
@@ -42,7 +47,7 @@ async function authenticateFirstMessage(deps: WsConnectionDeps, ws: WebSocket, p
 }
 
 export function createWsConnectionHandler(deps: WsConnectionDeps) {
-  return (ws: WebSocket, _req: IncomingMessage) => {
+  return (ws: WebSocket, req: IncomingMessage) => {
     let authed = false;
 
     ws.on("message", async (data) => {
@@ -55,7 +60,7 @@ export function createWsConnectionHandler(deps: WsConnectionDeps) {
       }
 
       if (!authed) {
-        authed = await authenticateFirstMessage(deps, ws, parsed);
+        authed = await authenticateFirstMessage(deps, ws, parsed, req.headers["user-agent"]);
         return;
       }
 
@@ -83,4 +88,3 @@ export function createWsConnectionHandler(deps: WsConnectionDeps) {
     });
   };
 }
-

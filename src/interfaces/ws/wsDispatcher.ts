@@ -18,6 +18,7 @@ export async function dispatchWsMessage(
       await deps.roomService.setReady(meta.token, msg.ready);
       break;
     case "lobby.chat":
+      await deps.roomService.recordChat(meta.roomId, meta.playerId, msg.text, msg.emoji);
       deps.hub.broadcastEvent(meta.roomId, {
         type: "lobby.chat",
         fromPlayerId: meta.playerId,
@@ -49,4 +50,3 @@ export async function dispatchWsMessage(
       break;
   }
 }
-

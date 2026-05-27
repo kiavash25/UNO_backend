@@ -1,4 +1,5 @@
 import type { CardGameAction, CardGameDefinition, CardGameEvent } from "../domain/cardGame/cardGame.js";
+import type { UnoGameState } from "../domain/uno/gameState.js";
 import { getRankReward } from "../domain/cardGame/gameScoring.js";
 import { getCardGame } from "../domain/cardGame/gameRegistry.js";
 import { RoomRepository } from "../infrastructure/mongo/roomRepository.js";
@@ -10,6 +11,7 @@ import type { LobbyPlayer, RoomSettings } from "./roomTypes.js";
 import { AppError } from "./errors.js";
 import { newPlayerId, newPlayerToken, type SessionPayload } from "./session.js";
 import { BotProfileService } from "./bots/botProfiles.js";
+import type { GameAnalyticsService } from "./gameAnalyticsService.js";
 
 export type CreateRoomResult = {
   roomId: string;
@@ -116,7 +118,51 @@ export class RoomService {
     private readonly sessions: SessionStore,
     private readonly events: RoomEvents = {},
     private readonly botProfiles = new BotProfileService(),
+    private readonly analytics?: GameAnalyticsService,
   ) {}
+
+  private trackAnalytics(task: Promise<void>): void {
+    void task.catch((error) => {
+      console.error("game analytics failed", error);
+    });
+  }
+
+  private cloneGameState<T>(state: T): T {
+    return JSON.parse(JSON.stringify(state)) as T;
+  }
+
+  private currentTurnStartedAt(state: LiveRoomState): number {
+    return state.turnDeadlineAt ? state.turnDeadlineAt - this.turnTimeoutMs : Date.now();
+  }
+
+  private trackUnoActionAndFinish(params: {
+    state: LiveRoomState;
+    playerId: string;
+    action: CardGameAction;
+    beforeGame: unknown;
+    endedAtMs: number;
+    startedAtMs: number;
+    events?: CardGameEvent[];
+    penaltyCards?: number;
+  }): void {
+    if ((params.state.settings.gameId ?? "uno") !== "uno" || !params.state.game) return;
+    this.trackAnalytics((async () => {
+      await this.analytics?.unoAction({
+        roomId: params.state.id,
+        playerId: params.playerId,
+        action: params.action,
+        before: params.beforeGame as UnoGameState,
+        after: this.cloneGameState(params.state.game) as UnoGameState,
+        startedAtMs: params.startedAtMs,
+        endedAtMs: params.endedAtMs,
+        events: params.events,
+        penaltyCards: params.penaltyCards,
+      });
+      if (params.state.phase === "finished") {
+        await this.analytics?.finishGame(params.state, buildMatchRewards(params.state));
+      }
+    })());
+  }
 
   private bump(state: LiveRoomState): void {
     state.version += 1;
@@ -188,8 +234,11 @@ export class RoomService {
     const game = this.gameForRoom(state);
     if (game.getActivePlayerId(state.game) !== playerId || !game.handleTurnTimeout) return;
 
+    const beforeGame = this.cloneGameState(state.game);
+    const startedAtMs = expectedDeadline - this.turnTimeoutMs;
     const result = game.handleTurnTimeout(state.game, playerId);
     if (!result.ok) return;
+    const endedAtMs = Date.now();
 
     const eliminated = result.events?.some((event) => event.type === "uno.playerEliminated") ?? false;
     this.handleGameEvents(state, [
@@ -201,6 +250,19 @@ export class RoomService {
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    this.trackUnoActionAndFinish({
+      state,
+      playerId,
+      action: { type: "timeout" },
+      beforeGame,
+      startedAtMs,
+      endedAtMs,
+      events: result.events,
+      penaltyCards: result.penaltyCards,
+    });
+    if (eliminated) {
+      this.trackAnalytics(this.analytics?.playerEliminated(state, playerId, "timeout") ?? Promise.resolve());
+    }
   }
 
   private scheduleBotTurn(roomId: string): void {
@@ -243,13 +305,26 @@ export class RoomService {
     });
     if (!action) return;
 
+    const beforeGame = this.cloneGameState(state.game);
+    const startedAtMs = this.currentTurnStartedAt(state);
     const result = game.applyAction(state.game, botId, action);
     if (!result.ok) return;
+    const endedAtMs = Date.now();
 
     this.handleGameEvents(state, result.events);
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    this.trackUnoActionAndFinish({
+      state,
+      playerId: botId,
+      action,
+      beforeGame,
+      startedAtMs,
+      endedAtMs,
+      events: result.events,
+      penaltyCards: result.penaltyCards,
+    });
   }
 
   private defaultSettings(partial: Partial<RoomSettings> & Pick<RoomSettings, "name">): RoomSettings {
@@ -311,6 +386,7 @@ export class RoomService {
     const playerToken = newPlayerToken();
     await this.persist(state);
     await this.sessions.save(playerToken, { roomId, playerId: hostId, userId });
+    this.trackAnalytics(this.analytics?.roomCreated(state, playerToken, userId) ?? Promise.resolve());
 
     return { roomId, code, playerToken, playerId: hostId };
   }
@@ -346,8 +422,23 @@ export class RoomService {
     const playerToken = newPlayerToken();
     await this.persist(state);
     await this.sessions.save(playerToken, { roomId, playerId, userId });
+    this.trackAnalytics(this.analytics?.playerJoined(state, playerId, playerToken, userId) ?? Promise.resolve());
 
     return { roomId, code: state.code, playerToken, playerId };
+  }
+
+  recordPlayerDevice(roomId: string, playerId: string, userAgent?: string): void {
+    this.trackAnalytics((async () => {
+      const state = await this.live.load(roomId);
+      if (!state) return;
+      await this.analytics?.playerDevice(state, playerId, userAgent);
+    })());
+  }
+
+  async recordChat(roomId: string, playerId: string, text?: string, emoji?: string): Promise<void> {
+    const state = await this.live.load(roomId);
+    if (!state) return;
+    this.trackAnalytics(this.analytics?.chat(state, playerId, text, emoji) ?? Promise.resolve());
   }
 
   async session(token: string): Promise<SessionPayload | null> {
@@ -525,10 +616,14 @@ export class RoomService {
       if (result?.ok) {
         this.handleGameEvents(state, result.events);
         if (game.isFinished(state.game)) state.phase = "finished";
+        this.trackAnalytics(this.analytics?.playerEliminated(state, playerId, "disconnect") ?? Promise.resolve());
       }
     }
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    if (state.phase === "finished") {
+      this.trackAnalytics(this.analytics?.finishGame(state, buildMatchRewards(state)) ?? Promise.resolve());
+    }
   }
 
   async setReady(token: string, ready: boolean): Promise<void> {
@@ -568,6 +663,7 @@ export class RoomService {
     state.phase = "playing";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    this.trackAnalytics(this.analytics?.gameStarted(state) ?? Promise.resolve());
   }
 
   async playCard(
@@ -601,13 +697,26 @@ export class RoomService {
     if (!state.game) throw new AppError("بازی فعال نیست", "bad_phase");
 
     const game = this.gameForRoom(state);
+    const beforeGame = this.cloneGameState(state.game);
+    const startedAtMs = this.currentTurnStartedAt(state);
     const res = game.applyAction(state.game, sess.playerId, action);
     if (!res.ok) throw new AppError(res.message, res.code);
+    const endedAtMs = Date.now();
 
     this.handleGameEvents(state, res.events);
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
+    this.trackUnoActionAndFinish({
+      state,
+      playerId: sess.playerId,
+      action,
+      beforeGame,
+      startedAtMs,
+      endedAtMs,
+      events: res.events,
+      penaltyCards: res.penaltyCards,
+    });
   }
 
   async claimMatchResult(token: string, userId: string): Promise<ClaimedMatchResult> {

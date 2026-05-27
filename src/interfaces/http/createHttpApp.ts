@@ -1,10 +1,12 @@
 import cors from "cors";
 import express from "express";
 import path from "node:path";
+import type { AdminService } from "../../application/adminService.js";
 import type { FeedbackService } from "../../application/feedbackService.js";
 import { RoomService } from "../../application/roomService.js";
 import type { UserService } from "../../application/userService.js";
 import { handleHttpError } from "./errorMiddleware.js";
+import { createAdminAuthRouter } from "./routes/adminAuthRoutes.js";
 import { createAuthRouter } from "./routes/authRoutes.js";
 import { createAvatarRouter } from "./routes/avatarRoutes.js";
 import { createBotRouter } from "./routes/botRoutes.js";
@@ -14,13 +16,14 @@ import { createRoomRouter } from "./routes/roomRoutes.js";
 import { createUserRouter } from "./routes/userRoutes.js";
 
 export type HttpAppDeps = {
+  adminService: AdminService;
   feedbackService: FeedbackService;
   roomService: RoomService;
   userService: UserService;
 };
 
 export function createHttpApp(deps: HttpAppDeps) {
-  const { feedbackService, roomService, userService } = deps;
+  const { adminService, feedbackService, roomService, userService } = deps;
   const app = express();
 
   app.use(cors({ origin: true, methods: ["GET", "POST", "PATCH", "OPTIONS"], allowedHeaders: ["Content-Type", "Authorization"] }));
@@ -37,6 +40,7 @@ export function createHttpApp(deps: HttpAppDeps) {
     res.json({ ok: true });
   });
 
+  app.use("/api/admin/auth", createAdminAuthRouter(adminService));
   app.use("/api/auth", createAuthRouter(userService));
   app.use("/api/avatars", createAvatarRouter());
   app.use("/api/feedback", createFeedbackRouter(feedbackService, userService));

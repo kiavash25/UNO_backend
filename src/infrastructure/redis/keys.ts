@@ -3,6 +3,8 @@ export const redisKeys = {
   liveRoom: (roomId: string) => `cardhub:live:${roomId}`,
   session: (token: string) => `cardhub:session:${token}`,
   publicLobbyRooms: () => "cardhub:publicLobbyRooms",
+  gameAnalyticsMeta: (roomId: string) => `cardhub:analytics:game:${roomId}:meta`,
+  gameAnalyticsEvents: (roomId: string) => `cardhub:analytics:game:${roomId}:events`,
 };
 
 export const legacyUnoRedisKeys = {

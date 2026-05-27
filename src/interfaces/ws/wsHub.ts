@@ -55,7 +55,7 @@ export class WsHub {
     return false;
   }
 
-  async authenticate(ws: WebSocket, token: string): Promise<boolean> {
+  async authenticate(ws: WebSocket, token: string, userAgent?: string): Promise<boolean> {
     const sess = await this.rooms.session(token);
     if (!sess) return false;
     
@@ -70,6 +70,7 @@ export class WsHub {
     this.addToRoom(sess.roomId, ws);
     this.clearDisconnectTimer(sess.roomId, sess.playerId);
     await this.rooms.setConnected(sess.roomId, sess.playerId, true);
+    this.rooms.recordPlayerDevice(sess.roomId, sess.playerId, userAgent);
     this.pushRoom(sess.roomId);
     return true;
   }

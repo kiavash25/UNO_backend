@@ -12,6 +12,9 @@ const schema = z.object({
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRES_IN_SEC: z.coerce.number().default(604_800),
   BCRYPT_COST: z.coerce.number().min(10).max(14).default(11),
+  ADMIN_USERNAME: z.string().min(1).max(64).default("admin"),
+  ADMIN_PASSWORD: z.string().min(1).max(128).default("admin"),
+  ADMIN_NAME: z.string().min(1).max(64).default("مدیر سیستم"),
 });
 
 export type AppEnv = z.infer<typeof schema>;

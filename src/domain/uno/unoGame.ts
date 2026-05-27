@@ -140,6 +140,7 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     const stillPlaying = !state.eliminatedPlayerIds?.[playerId];
     return {
       ok: true,
+      penaltyCards: result.penaltyCards,
       events: stillPlaying
         ? []
         : [
