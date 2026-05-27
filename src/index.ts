@@ -1,9 +1,11 @@
 import http from "http";
+import { FeedbackService } from "./application/feedbackService.js";
 import { RoomService } from "./application/roomService.js";
 import { UserService } from "./application/userService.js";
 import { loadEnv } from "./config/env.js";
 import { createJwtService } from "./infrastructure/auth/jwt.js";
 import { connectMongo, disconnectMongo } from "./infrastructure/mongo/connection.js";
+import { FeedbackRepository } from "./infrastructure/mongo/feedbackRepository.js";
 import { RoomRepository } from "./infrastructure/mongo/roomRepository.js";
 import { UserRepository } from "./infrastructure/mongo/userRepository.js";
 import { LiveRoomStore } from "./infrastructure/redis/liveRoomStore.js";
@@ -48,11 +50,13 @@ async function main() {
   hubRef.hub = new WsHub(roomService);
 
   const jwt = createJwtService(env.JWT_SECRET, env.JWT_EXPIRES_IN_SEC);
+  const feedbackRepo = new FeedbackRepository();
   const userRepo = new UserRepository();
   await userRepo.prepareIndexes();
+  const feedbackService = new FeedbackService(feedbackRepo);
   const userService = new UserService(userRepo, jwt, env.BCRYPT_COST);
 
-  const app = createHttpApp({ roomService, userService });
+  const app = createHttpApp({ feedbackService, roomService, userService });
   const server = http.createServer(app);
   attachWsServer({ server, roomService, hub: hubRef.hub });
 
