@@ -30,6 +30,23 @@ export type LeaderboardUser = Pick<
   "_id" | "displayName" | "avatar" | "xp" | "wins" | "gamesPlayed" | "accuracyPct" | "gameStats"
 >;
 
+export type BotUser = Pick<
+  UserDoc,
+  | "_id"
+  | "username"
+  | "displayName"
+  | "avatar"
+  | "xp"
+  | "level"
+  | "coins"
+  | "wins"
+  | "gamesPlayed"
+  | "winStreak"
+  | "bestWinStreak"
+  | "accuracyPct"
+  | "isBot"
+>;
+
 export class UserRepository {
   async prepareIndexes(): Promise<void> {
     await UserModel.collection.dropIndex("email_1").catch((err: unknown) => {
@@ -88,6 +105,15 @@ export class UserRepository {
       .sort(sort)
       .limit(limit)
       .lean<LeaderboardUser[]>()
+      .exec();
+  }
+
+  async listBots(limit = 100): Promise<BotUser[]> {
+    const safeLimit = Math.max(1, Math.min(500, limit));
+    return UserModel.find({ isBot: true })
+      .select("_id username displayName avatar xp level coins wins gamesPlayed winStreak bestWinStreak accuracyPct isBot")
+      .limit(safeLimit)
+      .lean<BotUser[]>()
       .exec();
   }
 }

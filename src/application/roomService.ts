@@ -3,6 +3,7 @@ import type { UnoGameState } from "../domain/uno/gameState.js";
 import { getRankReward } from "../domain/cardGame/gameScoring.js";
 import { getCardGame } from "../domain/cardGame/gameRegistry.js";
 import { RoomRepository } from "../infrastructure/mongo/roomRepository.js";
+import { UserRepository, type BotUser } from "../infrastructure/mongo/userRepository.js";
 import { LiveRoomStore } from "../infrastructure/redis/liveRoomStore.js";
 import { SessionStore } from "../infrastructure/redis/sessionStore.js";
 import type { LiveRoomState } from "./liveRoomState.js";
@@ -10,7 +11,6 @@ import { generateRoomCode } from "./roomCode.js";
 import type { LobbyPlayer, RoomSettings } from "./roomTypes.js";
 import { AppError } from "./errors.js";
 import { newPlayerId, newPlayerToken, type SessionPayload } from "./session.js";
-import { BotProfileService } from "./bots/botProfiles.js";
 import type { GameAnalyticsService } from "./gameAnalyticsService.js";
 
 export type CreateRoomResult = {
@@ -114,10 +114,10 @@ export class RoomService {
 
   constructor(
     private readonly rooms: RoomRepository,
+    private readonly users: UserRepository,
     private readonly live: LiveRoomStore,
     private readonly sessions: SessionStore,
     private readonly events: RoomEvents = {},
-    private readonly botProfiles = new BotProfileService(),
     private readonly analytics?: GameAnalyticsService,
   ) {}
 
@@ -519,18 +519,24 @@ export class RoomService {
 
     const existing = new Set(state.players.map((p) => p.displayName));
     const botsNeeded = totalPlayers - 1;
-    const bots = this.botProfiles.pick(botsNeeded, existing);
-    for (const bot of bots) {
+    const availableBots = (await this.users.listBots(200))
+      .filter((bot) => !existing.has(bot.displayName))
+      .sort(() => Math.random() - 0.5);
+    if (availableBots.length < botsNeeded) {
+      throw new AppError("تعداد بات‌های در دسترس کافی نیست", "insufficient_bots", 409);
+    }
+
+    for (const bot of availableBots.slice(0, botsNeeded)) {
       const botId = newPlayerId();
-      let displayName = bot.displayName;
-      while (existing.has(displayName)) {
-        displayName = `${bot.displayName}${Math.floor(10 + Math.random() * 90)}`;
+      let botDisplayName = bot.displayName;
+      while (existing.has(botDisplayName)) {
+        botDisplayName = `${bot.displayName}${Math.floor(10 + Math.random() * 90)}`;
       }
-      existing.add(displayName);
-      const profile = this.botProfiles.toPlayerProfile(bot, displayName);
+      existing.add(botDisplayName);
+      const profile = this.toBotPlayerProfile(bot, botDisplayName);
       state.players.push({
         id: botId,
-        displayName,
+        displayName: botDisplayName,
         avatar: bot.avatar,
         profile,
         isHost: false,
@@ -546,6 +552,23 @@ export class RoomService {
     return created;
   }
 
+  private toBotPlayerProfile(bot: BotUser, displayName: string): LobbyPlayer["profile"] {
+    return {
+      id: `bot:${String(bot._id)}`,
+      username: bot.username?.trim() || `bot_${String(bot._id).slice(-6)}`,
+      displayName,
+      avatar: bot.avatar,
+      xp: bot.xp,
+      level: bot.level,
+      coins: bot.coins,
+      wins: bot.wins,
+      gamesPlayed: bot.gamesPlayed,
+      winStreak: bot.winStreak,
+      bestWinStreak: bot.bestWinStreak,
+      accuracyPct: bot.accuracyPct,
+      isBot: true,
+    };
+  }
   async getPublicByCode(code: string): Promise<PublicRoomSummary | null> {
     const upper = code.toUpperCase();
     let roomId = await this.live.findRoomIdByCode(upper);

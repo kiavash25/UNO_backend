@@ -29,10 +29,12 @@ async function main() {
   const live = new LiveRoomStore(redis);
   const sessions = new SessionStore(redis, env.PLAYER_TOKEN_TTL_SEC);
   const analytics = new GameAnalyticsService(redis, gameReportRepo);
+  const userRepo = new UserRepository();
 
   const hubRef: { hub?: WsHub } = {};
   const roomService = new RoomService(
     roomRepo,
+    userRepo,
     live,
     sessions,
     {
@@ -57,7 +59,6 @@ async function main() {
         hubRef.hub?.closeRoom(roomId);
       },
     },
-    undefined,
     analytics,
   );
   hubRef.hub = new WsHub(roomService);
@@ -65,7 +66,6 @@ async function main() {
   const jwt = createJwtService(env.JWT_SECRET, env.JWT_EXPIRES_IN_SEC);
   const adminRepo = new AdminRepository();
   const feedbackRepo = new FeedbackRepository();
-  const userRepo = new UserRepository();
   await adminRepo.prepareIndexes();
   await userRepo.prepareIndexes();
   const adminService = new AdminService(adminRepo, jwt, env.BCRYPT_COST);
