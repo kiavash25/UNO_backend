@@ -1,0 +1,146 @@
+[
+  {
+    "key": "ava",
+    "username": "ava_bot",
+    "phone": "bot_ava",
+    "displayName": "Ava",
+    "avatar": "/assets/avatars/avatar_1.png",
+    "xp": 1260,
+    "level": 4,
+    "coins": 420,
+    "wins": 18,
+    "gamesPlayed": 45,
+    "winStreak": 2,
+    "bestWinStreak": 6,
+    "accuracyPct": 40,
+    "gameStats": {
+      "uno": { "xp": 1260, "wins": 18, "gamesPlayed": 45 }
+    }
+  },
+  {
+    "key": "parsa",
+    "username": "parsa_bot",
+    "phone": "bot_parsa",
+    "displayName": "Parsa",
+    "avatar": "/assets/avatars/avatar_2.png",
+    "xp": 2140,
+    "level": 5,
+    "coins": 680,
+    "wins": 31,
+    "gamesPlayed": 70,
+    "winStreak": 1,
+    "bestWinStreak": 8,
+    "accuracyPct": 44,
+    "gameStats": {
+      "uno": { "xp": 2140, "wins": 31, "gamesPlayed": 70 }
+    }
+  },
+  {
+    "key": "nima",
+    "username": "nima_bot",
+    "phone": "bot_nima",
+    "displayName": "Nima",
+    "avatar": "/assets/avatars/avatar_3.png",
+    "xp": 870,
+    "level": 3,
+    "coins": 310,
+    "wins": 11,
+    "gamesPlayed": 34,
+    "winStreak": 0,
+    "bestWinStreak": 4,
+    "accuracyPct": 32,
+    "gameStats": {
+      "uno": { "xp": 870, "wins": 11, "gamesPlayed": 34 }
+    }
+  },
+  {
+    "key": "taraneh",
+    "username": "taraneh_bot",
+    "phone": "bot_taraneh",
+    "displayName": "Taraneh",
+    "avatar": "/assets/avatars/avatar_4.png",
+    "xp": 3050,
+    "level": 6,
+    "coins": 930,
+    "wins": 43,
+    "gamesPlayed": 92,
+    "winStreak": 3,
+    "bestWinStreak": 9,
+    "accuracyPct": 47,
+    "gameStats": {
+      "uno": { "xp": 3050, "wins": 43, "gamesPlayed": 92 }
+    }
+  },
+  {
+    "key": "arin",
+    "username": "arin_bot",
+    "phone": "bot_arin",
+    "displayName": "Arin",
+    "avatar": "/assets/avatars/avatar_5.png",
+    "xp": 1520,
+    "level": 4,
+    "coins": 510,
+    "wins": 21,
+    "gamesPlayed": 55,
+    "winStreak": 1,
+    "bestWinStreak": 5,
+    "accuracyPct": 38,
+    "gameStats": {
+      "uno": { "xp": 1520, "wins": 21, "gamesPlayed": 55 }
+    }
+  },
+  {
+    "key": "helia",
+    "username": "helia_bot",
+    "phone": "bot_helia",
+    "displayName": "Helia",
+    "avatar": "/assets/avatars/avatar_6.png",
+    "xp": 2410,
+    "level": 5,
+    "coins": 740,
+    "wins": 35,
+    "gamesPlayed": 81,
+    "winStreak": 0,
+    "bestWinStreak": 7,
+    "accuracyPct": 43,
+    "gameStats": {
+      "uno": { "xp": 2410, "wins": 35, "gamesPlayed": 81 }
+    }
+  },
+  {
+    "key": "mani",
+    "username": "mani_bot",
+    "phone": "bot_mani",
+    "displayName": "Mani",
+    "avatar": "/assets/avatars/avatar_7.png",
+    "xp": 980,
+    "level": 3,
+    "coins": 360,
+    "wins": 14,
+    "gamesPlayed": 39,
+    "winStreak": 2,
+    "bestWinStreak": 4,
+    "accuracyPct": 36,
+    "gameStats": {
+      "uno": { "xp": 980, "wins": 14, "gamesPlayed": 39 }
+    }
+  },
+  {
+    "key": "dina",
+    "username": "dina_bot",
+    "phone": "bot_dina",
+    "displayName": "Dina",
+    "avatar": "/assets/avatars/avatar_8.png",
+    "xp": 1870,
+    "level": 4,
+    "coins": 590,
+    "wins": 27,
+    "gamesPlayed": 66,
+    "winStreak": 4,
+    "bestWinStreak": 6,
+    "accuracyPct": 41,
+    "gameStats": {
+      "uno": { "xp": 1870, "wins": 27, "gamesPlayed": 66 }
+    }
+  }
+]
