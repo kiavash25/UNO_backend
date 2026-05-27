@@ -6,7 +6,10 @@ export type UserPatch = Partial<
   Pick<
     UserDoc,
     | "displayName"
+    | "username"
     | "avatar"
+    | "isBot"
+    | "botProfile"
     | "xp"
     | "level"
     | "coins"
@@ -38,9 +41,12 @@ export class UserRepository {
 
   async create(data: {
     phone: string;
+    username?: string;
     passwordHash: string;
     displayName: string;
     avatar: string;
+    isBot?: boolean;
+    botProfile?: UserDoc["botProfile"];
   }): Promise<UserDoc> {
     const created = await UserModel.create(data);
     const u = await UserModel.findById(created._id).lean<UserDoc>().exec();

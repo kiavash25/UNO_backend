@@ -3,9 +3,12 @@ import mongoose, { Schema } from "mongoose";
 export type UserDoc = {
   _id: mongoose.Types.ObjectId;
   phone: string;
+  username?: string;
   passwordHash: string;
   displayName: string;
   avatar: string;
+  isBot: boolean;
+  botProfile?: UserBotProfile;
   xp: number;
   level: number;
   coins: number;
@@ -25,6 +28,19 @@ export type UserGameStats = {
   gamesPlayed: number;
 };
 
+export type UserBotProfile = {
+  key: string;
+  difficulty?: "easy" | "normal" | "hard" | string;
+};
+
+const botProfileSchema = new Schema<UserBotProfile>(
+  {
+    key: { type: String, required: true, trim: true },
+    difficulty: { type: String, required: false, trim: true },
+  },
+  { _id: false },
+);
+
 const gameStatsSchema = new Schema<UserGameStats>(
   {
     xp: { type: Number, default: 0 },
@@ -37,9 +53,12 @@ const gameStatsSchema = new Schema<UserGameStats>(
 const userSchema = new Schema<UserDoc>(
   {
     phone: { type: String, required: true, unique: true, trim: true, index: true },
+    username: { type: String, unique: true, sparse: true, trim: true, lowercase: true },
     passwordHash: { type: String, required: true, select: false },
     displayName: { type: String, required: true, trim: true },
     avatar: { type: String, required: true, default: "/assets/avatars/avatar_1.png" },
+    isBot: { type: Boolean, required: true, default: false, index: true },
+    botProfile: { type: botProfileSchema, required: false },
     xp: { type: Number, default: 0 },
     level: { type: Number, default: 1 },
     coins: { type: Number, default: 100 },
