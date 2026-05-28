@@ -349,7 +349,7 @@ export class RoomService {
       maxPlayers: partial.maxPlayers ?? Math.min(4, game.maxPlayers),
       mode: partial.mode ?? "classic",
       isPrivate: partial.isPrivate ?? true,
-      turnTimeoutSec: this.defaultTurnTimeoutMs,
+      turnTimeoutSec: this.defaultTurnTimeoutMs / 1000,
     };
   }
 
