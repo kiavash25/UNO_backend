@@ -8,6 +8,8 @@ export type UserPatch = Partial<
     UserDoc,
     | "displayName"
     | "username"
+    | "baleUserId"
+    | "baleLinkedAt"
     | "avatar"
     | "isBot"
     | "botProfile"
@@ -60,6 +62,8 @@ export class UserRepository {
   async create(data: {
     phone: string;
     username?: string;
+    baleUserId?: string;
+    baleLinkedAt?: Date;
     passwordHash: string;
     displayName: string;
     avatar: string;
@@ -74,6 +78,10 @@ export class UserRepository {
 
   async findByPhone(phone: string): Promise<UserDoc | null> {
     return UserModel.findOne({ phone: { $in: iranianPhoneLookupVariants(phone.trim()) } }).lean<UserDoc>().exec();
+  }
+
+  async findByBaleUserId(baleUserId: string): Promise<UserDoc | null> {
+    return UserModel.findOne({ baleUserId: baleUserId.trim() }).lean<UserDoc>().exec();
   }
 
   async findForLogin(phone: string): Promise<(UserDoc & { passwordHash: string }) | null> {
@@ -96,6 +104,16 @@ export class UserRepository {
 
   async updateById(id: string, patch: UserPatch): Promise<UserDoc | null> {
     return UserModel.findByIdAndUpdate(id, { $set: patch }, { new: true }).lean<UserDoc>().exec();
+  }
+
+  async linkBaleById(id: string, baleUserId: string): Promise<UserDoc | null> {
+    return UserModel.findByIdAndUpdate(
+      id,
+      { $set: { baleUserId: baleUserId.trim(), baleLinkedAt: new Date() } },
+      { new: true },
+    )
+      .lean<UserDoc>()
+      .exec();
   }
 
   async leaderboard(scope: LeaderboardScope, limit: number): Promise<LeaderboardUser[]> {

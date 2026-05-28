@@ -31,6 +31,16 @@ const platformLoginBody = z.object({
   initData: z.string().max(4096).optional(),
 });
 
+const baleInitBody = z.object({
+  initData: z.string().min(1).max(4096),
+});
+
+const baleContactBody = z.object({
+  initData: z.string().min(1).max(4096),
+  phoneNumber: phoneSchema,
+  username: z.string().min(1).max(64).optional(),
+});
+
 export class AuthController {
   constructor(private readonly users: UserService) {}
 
@@ -57,5 +67,21 @@ export class AuthController {
       initData: body.initData,
     });
     res.status(200).json(out);
+  };
+
+  checkBaleUser: express.RequestHandler = async (req, res) => {
+    const body = baleInitBody.parse(req.body);
+    const out = await this.users.checkBaleUser(body.initData);
+    if (!out) {
+      res.status(404).json({ success: false, error: "bale_user_not_found" });
+      return;
+    }
+    res.status(200).json({ success: true, data: out });
+  };
+
+  verifyBaleContact: express.RequestHandler = async (req, res) => {
+    const body = baleContactBody.parse(req.body);
+    const out = await this.users.verifyBaleContact(body);
+    res.status(200).json({ success: true, data: out });
   };
 }

@@ -10,6 +10,7 @@ const schema = z.object({
   REDIS_URL: z.string().min(1),
   PLAYER_TOKEN_TTL_SEC: z.coerce.number().default(86_400),
   JWT_SECRET: z.string().min(16),
+  BALE_BOT_TOKEN: z.string().optional().default(""),
   JWT_EXPIRES_IN_SEC: z.coerce.number().default(604_800),
   BCRYPT_COST: z.coerce.number().min(10).max(14).default(11),
   ADMIN_USERNAME: z.string().min(1).max(64).default("admin"),

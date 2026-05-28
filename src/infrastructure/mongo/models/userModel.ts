@@ -4,6 +4,8 @@ export type UserDoc = {
   _id: mongoose.Types.ObjectId;
   phone: string;
   username?: string;
+  baleUserId?: string;
+  baleLinkedAt?: Date;
   passwordHash: string;
   displayName: string;
   avatar: string;
@@ -54,6 +56,8 @@ const userSchema = new Schema<UserDoc>(
   {
     phone: { type: String, required: true, unique: true, trim: true, index: true },
     username: { type: String, unique: true, sparse: true, trim: true, lowercase: true },
+    baleUserId: { type: String, unique: true, sparse: true, trim: true, index: true },
+    baleLinkedAt: { type: Date, required: false },
     passwordHash: { type: String, required: true, select: false },
     displayName: { type: String, required: true, trim: true },
     avatar: { type: String, required: true, default: "/assets/avatars/avatar_1.png" },

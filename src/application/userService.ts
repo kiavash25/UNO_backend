@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import type { JwtService } from "../infrastructure/auth/jwt.js";
+import { verifyBaleInitData } from "../infrastructure/auth/baleInitData.js";
 import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/userModel.js";
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
 import { AppError } from "./errors.js";
@@ -75,6 +76,7 @@ export class UserService {
     private readonly users: UserRepository,
     private readonly jwt: JwtService,
     private readonly bcryptCost: number,
+    private readonly baleBotToken = "",
   ) {}
 
   verifyAccessToken(token: string): Promise<{ userId: string; phone: string }> {
@@ -143,6 +145,9 @@ export class UserService {
   }
 
   async platformLogin(input: PlatformLoginInput): Promise<{ token: string; user: PublicProfile }> {
+    if (input.provider === "bale_bot") {
+      throw new AppError("برای ورود بله از مسیر امن بله استفاده کنید", "use_bale_flow", 400);
+    }
     const existing = await this.users.findByPhone(input.phone);
     if (existing) {
       const token = await this.jwt.signAccessToken(String(existing._id), normalizeIranianPhone(existing.phone));
@@ -153,7 +158,7 @@ export class UserService {
 
     const displayName =
       input.displayName?.trim() ||
-      (input.provider === "bale_bot" ? "بازیکن بله" : "بازیکن تلگرام");
+      "بازیکن تلگرام";
     const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), this.bcryptCost);
     const avatar = input.avatar ? normalizeAvatar(input.avatar) : AVATAR_OPTIONS[0]!;
     const doc = await this.users.create({
@@ -161,6 +166,53 @@ export class UserService {
       passwordHash,
       displayName: displayName.slice(0, 32),
       avatar,
+    });
+
+    const token = await this.jwt.signAccessToken(String(doc._id), normalizeIranianPhone(doc.phone));
+    return { token, user: this.toPublic(doc) };
+  }
+
+  async checkBaleUser(initData: string): Promise<{ token: string; user: PublicProfile } | null> {
+    const verified = verifyBaleInitData(initData, this.baleBotToken);
+    const existing = await this.users.findByBaleUserId(String(verified.user.id));
+    if (!existing) return null;
+
+    const token = await this.jwt.signAccessToken(String(existing._id), normalizeIranianPhone(existing.phone));
+    return { token, user: this.toPublic(existing) };
+  }
+
+  async verifyBaleContact(input: {
+    initData: string;
+    phoneNumber: string;
+    username?: string;
+  }): Promise<{ token: string; user: PublicProfile }> {
+    const verified = verifyBaleInitData(input.initData, this.baleBotToken);
+    const baleUserId = String(verified.user.id);
+    const phone = normalizeIranianPhone(input.phoneNumber);
+    const existingBale = await this.users.findByBaleUserId(baleUserId);
+    if (existingBale) {
+      const token = await this.jwt.signAccessToken(String(existingBale._id), normalizeIranianPhone(existingBale.phone));
+      return { token, user: this.toPublic(existingBale) };
+    }
+
+    const existingPhone = await this.users.findByPhone(phone);
+    if (existingPhone) {
+      const linked = await this.users.linkBaleById(String(existingPhone._id), baleUserId);
+      if (!linked) throw new AppError("اتصال بله ناموفق بود", "bale_link_failed", 500);
+      const token = await this.jwt.signAccessToken(String(linked._id), normalizeIranianPhone(linked.phone));
+      return { token, user: this.toPublic(linked) };
+    }
+
+    const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), this.bcryptCost);
+    const displayName = (verified.user.first_name?.trim() || input.username?.trim() || "بازیکن بله").slice(0, 32);
+    const doc = await this.users.create({
+      phone,
+      username: input.username,
+      baleUserId,
+      baleLinkedAt: new Date(),
+      passwordHash,
+      displayName,
+      avatar: AVATAR_OPTIONS[0]!,
     });
 
     const token = await this.jwt.signAccessToken(String(doc._id), normalizeIranianPhone(doc.phone));
