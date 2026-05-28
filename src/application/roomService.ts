@@ -109,10 +109,15 @@ function buildMatchRewards(state: LiveRoomState): MatchRewardSummary[] {
   });
 }
 
+function getTurnTimeoutMs(state: LiveRoomState, fallbackMs = 10_000): number {
+  const timeoutSec = state.settings.turnTimeoutSec;
+  return Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec * 1000 : fallbackMs;
+}
+
 export class RoomService {
   private readonly botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly turnTimeoutMs = 10_000;
+  private readonly defaultTurnTimeoutMs = 10_000;
 
   constructor(
     private readonly rooms: RoomRepository,
@@ -133,8 +138,12 @@ export class RoomService {
     return JSON.parse(JSON.stringify(state)) as T;
   }
 
+  private getTurnTimeoutMs(state: LiveRoomState): number {
+    return getTurnTimeoutMs(state, this.defaultTurnTimeoutMs);
+  }
+
   private currentTurnStartedAt(state: LiveRoomState): number {
-    return state.turnDeadlineAt ? state.turnDeadlineAt - this.turnTimeoutMs : Date.now();
+    return state.turnDeadlineAt ? state.turnDeadlineAt - this.getTurnTimeoutMs(state) : Date.now();
   }
 
   private trackUnoActionAndFinish(params: {
@@ -186,7 +195,7 @@ export class RoomService {
   private resetTurnDeadline(state: LiveRoomState): void {
     const game = state.game ? this.gameForRoom(state) : null;
     const activePlayerId = state.game && game ? game.getActivePlayerId(state.game) : null;
-    state.turnDeadlineAt = state.phase === "playing" && activePlayerId ? Date.now() + this.turnTimeoutMs : null;
+    state.turnDeadlineAt = state.phase === "playing" && activePlayerId ? Date.now() + this.getTurnTimeoutMs(state) : null;
   }
 
   private gameDefinition(gameId: string): CardGameDefinition {
@@ -237,7 +246,7 @@ export class RoomService {
     if (game.getActivePlayerId(state.game) !== playerId || !game.handleTurnTimeout) return;
 
     const beforeGame = this.cloneGameState(state.game);
-    const startedAtMs = expectedDeadline - this.turnTimeoutMs;
+    const startedAtMs = expectedDeadline - this.getTurnTimeoutMs(state);
     const result = game.handleTurnTimeout(state.game, playerId);
     if (!result.ok) return;
     const endedAtMs = Date.now();
@@ -340,7 +349,7 @@ export class RoomService {
       maxPlayers: partial.maxPlayers ?? Math.min(4, game.maxPlayers),
       mode: partial.mode ?? "classic",
       isPrivate: partial.isPrivate ?? true,
-      turnTimeoutSec: 10,
+      turnTimeoutSec: this.defaultTurnTimeoutMs,
     };
   }
 
@@ -853,6 +862,7 @@ export function clientRoomView(state: LiveRoomState, viewerId: string) {
     settings: state.settings,
     players: state.players,
     serverNow: Date.now(),
+    turnTimeoutMs: getTurnTimeoutMs(state),
     turnDeadlineAt: state.turnDeadlineAt ?? null,
     game: state.game && game ? game.projectStateForPlayer(state.game, viewerId) : null,
     matchRewards: state.phase === "finished" ? buildMatchRewards(state) : [],
