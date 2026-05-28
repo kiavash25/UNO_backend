@@ -1,6 +1,7 @@
 import type { UserDoc } from "./models/userModel.js";
 import { UserModel } from "./models/userModel.js";
 import type { SortOrder } from "mongoose";
+import { iranianPhoneLookupVariants, normalizeIranianPhone } from "../../shared/phone.js";
 
 export type UserPatch = Partial<
   Pick<
@@ -65,18 +66,18 @@ export class UserRepository {
     isBot?: boolean;
     botProfile?: UserDoc["botProfile"];
   }): Promise<UserDoc> {
-    const created = await UserModel.create(data);
+    const created = await UserModel.create({ ...data, phone: normalizeIranianPhone(data.phone) });
     const u = await UserModel.findById(created._id).lean<UserDoc>().exec();
     if (!u) throw new Error("user persist failed");
     return u;
   }
 
   async findByPhone(phone: string): Promise<UserDoc | null> {
-    return UserModel.findOne({ phone: phone.trim() }).lean<UserDoc>().exec();
+    return UserModel.findOne({ phone: { $in: iranianPhoneLookupVariants(phone.trim()) } }).lean<UserDoc>().exec();
   }
 
   async findForLogin(phone: string): Promise<(UserDoc & { passwordHash: string }) | null> {
-    return UserModel.findOne({ phone: phone.trim() })
+    return UserModel.findOne({ phone: { $in: iranianPhoneLookupVariants(phone.trim()) } })
       .select("+passwordHash")
       .lean<UserDoc & { passwordHash: string }>()
       .exec();

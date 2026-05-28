@@ -9,7 +9,7 @@ export function createAuthRouter(userService: UserService): Router {
 
   router.post("/register", asyncHandler(controller.register));
   router.post("/login", asyncHandler(controller.login));
+  router.post("/platform-login", asyncHandler(controller.platformLogin));
 
   return router;
 }
-

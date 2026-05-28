@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
 import type { JwtService } from "../infrastructure/auth/jwt.js";
 import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/userModel.js";
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
@@ -10,6 +11,7 @@ import {
   xpProgress,
 } from "./userProfile.js";
 import { AVATAR_OPTIONS, normalizeAvatar } from "../constant/avatar.cons.js";
+import { normalizeIranianPhone } from "../shared/phone.js";
 
 export type PublicProfile = {
   id: string;
@@ -57,6 +59,17 @@ export type Leaderboard = {
   entries: LeaderboardEntry[];
 };
 
+export type PlatformLoginProvider = "bale_bot" | "telegram_mini_app";
+
+export type PlatformLoginInput = {
+  provider: PlatformLoginProvider;
+  phone: string;
+  displayName?: string;
+  avatar?: string;
+  platformUserId?: string;
+  initData?: string;
+};
+
 export class UserService {
   constructor(
     private readonly users: UserRepository,
@@ -78,7 +91,7 @@ export class UserService {
     const { xpIntoLevel, xpForNextLevel, level } = xpProgress(user.xp);
     return {
       id: String(user._id),
-      phone: user.phone,
+      phone: normalizeIranianPhone(user.phone),
       displayName: user.displayName,
       avatar: normalizeAvatar(user.avatar),
       xp: user.xp,
@@ -111,7 +124,7 @@ export class UserService {
       avatar,
     });
 
-    const token = await this.jwt.signAccessToken(String(doc._id), doc.phone);
+    const token = await this.jwt.signAccessToken(String(doc._id), normalizeIranianPhone(doc.phone));
     return { token, user: this.toPublic(doc) };
   }
 
@@ -125,8 +138,33 @@ export class UserService {
     const full = await this.users.findById(String(doc._id));
     if (!full) throw new AppError("کاربر پیدا نشد", "not_found", 404);
 
-    const token = await this.jwt.signAccessToken(String(full._id), full.phone);
+    const token = await this.jwt.signAccessToken(String(full._id), normalizeIranianPhone(full.phone));
     return { token, user: this.toPublic(full) };
+  }
+
+  async platformLogin(input: PlatformLoginInput): Promise<{ token: string; user: PublicProfile }> {
+    const existing = await this.users.findByPhone(input.phone);
+    if (existing) {
+      const token = await this.jwt.signAccessToken(String(existing._id), normalizeIranianPhone(existing.phone));
+      return { token, user: this.toPublic(existing) };
+    }
+
+    if (input.avatar !== undefined && !isAllowedAvatar(input.avatar)) throw new AppError("آواتار نامعتبر است", "bad_avatar");
+
+    const displayName =
+      input.displayName?.trim() ||
+      (input.provider === "bale_bot" ? "بازیکن بله" : "بازیکن تلگرام");
+    const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), this.bcryptCost);
+    const avatar = input.avatar ? normalizeAvatar(input.avatar) : AVATAR_OPTIONS[0]!;
+    const doc = await this.users.create({
+      phone: input.phone.trim(),
+      passwordHash,
+      displayName: displayName.slice(0, 32),
+      avatar,
+    });
+
+    const token = await this.jwt.signAccessToken(String(doc._id), normalizeIranianPhone(doc.phone));
+    return { token, user: this.toPublic(doc) };
   }
 
   async getProfile(userId: string): Promise<PublicProfile> {
