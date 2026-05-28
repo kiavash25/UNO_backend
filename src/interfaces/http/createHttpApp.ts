@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AdminService } from "../../application/adminService.js";
 import type { FeedbackService } from "../../application/feedbackService.js";
@@ -24,6 +25,8 @@ export type HttpAppDeps = {
 export function createHttpApp(deps: HttpAppDeps) {
   const { adminService, feedbackService, roomService, userService } = deps;
   const app = express();
+  const appUiPath = path.resolve(process.cwd(), "appUI");
+  const appUiIndexPath = path.join(appUiPath, "index.html");
 
   app.use(cors({ origin: true, methods: ["GET", "POST", "PATCH", "OPTIONS"], allowedHeaders: ["Content-Type", "Authorization"] }));
   app.use(express.json());
@@ -46,6 +49,23 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.use("/api", createUserRouter(userService, roomService));
   app.use("/api/games", createGameRouter());
   app.use("/api/rooms", createRoomRouter(roomService, userService));
+
+  app.use(express.static(appUiPath));
+
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path === "/health" || req.path === "/ws") {
+      next();
+      return;
+    }
+
+    if (!existsSync(appUiIndexPath)) {
+      res.status(404).json({ error: "Frontend build not found. Put your build files in UNO_Backend/appUI." });
+      return;
+    }
+
+    res.sendFile(appUiIndexPath);
+  });
+
   app.use(handleHttpError);
 
   return app;
