@@ -536,7 +536,7 @@ export class RoomService {
       .filter((bot) => !existing.has(bot.displayName))
       .sort(() => Math.random() - 0.5);
     if (availableBots.length < botsNeeded) {
-      throw new AppError("تعداد بات‌های در دسترس کافی نیست", "insufficient_bots", 409);
+      throw new AppError("تعداد کاربرفعال در دسترس کافی نیست", "insufficient_bots", 409);
     }
 
     for (const bot of availableBots.slice(0, botsNeeded)) {
