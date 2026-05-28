@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import type { JwtService } from "../infrastructure/auth/jwt.js";
-import { verifyBaleInitData } from "../infrastructure/auth/baleInitData.js";
+import { verifyBaleInitData, verifyTelegramInitData } from "../infrastructure/auth/baleInitData.js";
 import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/userModel.js";
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
 import { AppError } from "./errors.js";
@@ -71,12 +71,17 @@ export type PlatformLoginInput = {
   initData?: string;
 };
 
+export type PlatformTokenConfig = {
+  baleBotToken?: string;
+  telegramBotToken?: string;
+};
+
 export class UserService {
   constructor(
     private readonly users: UserRepository,
     private readonly jwt: JwtService,
     private readonly bcryptCost: number,
-    private readonly baleBotToken = "",
+    private readonly platformTokens: PlatformTokenConfig = {},
   ) {}
 
   verifyAccessToken(token: string): Promise<{ userId: string; phone: string }> {
@@ -145,8 +150,8 @@ export class UserService {
   }
 
   async platformLogin(input: PlatformLoginInput): Promise<{ token: string; user: PublicProfile }> {
-    if (input.provider === "bale_bot") {
-      throw new AppError("برای ورود بله از مسیر امن بله استفاده کنید", "use_bale_flow", 400);
+    if (input.provider === "bale_bot" || input.provider === "telegram_mini_app") {
+      throw new AppError("برای ورود پلتفرمی از مسیر امن همان پلتفرم استفاده کنید", "use_secure_platform_flow", 400);
     }
     const existing = await this.users.findByPhone(input.phone);
     if (existing) {
@@ -173,7 +178,7 @@ export class UserService {
   }
 
   async checkBaleUser(initData: string): Promise<{ token: string; user: PublicProfile } | null> {
-    const verified = verifyBaleInitData(initData, this.baleBotToken);
+    const verified = verifyBaleInitData(initData, this.platformTokens.baleBotToken ?? "");
     const existing = await this.users.findByBaleUserId(String(verified.user.id));
     if (!existing) return null;
 
@@ -186,7 +191,7 @@ export class UserService {
     phoneNumber: string;
     username?: string;
   }): Promise<{ token: string; user: PublicProfile }> {
-    const verified = verifyBaleInitData(input.initData, this.baleBotToken);
+    const verified = verifyBaleInitData(input.initData, this.platformTokens.baleBotToken ?? "");
     const baleUserId = String(verified.user.id);
     const phone = normalizeIranianPhone(input.phoneNumber);
     const existingBale = await this.users.findByBaleUserId(baleUserId);
@@ -210,6 +215,53 @@ export class UserService {
       username: input.username,
       baleUserId,
       baleLinkedAt: new Date(),
+      passwordHash,
+      displayName,
+      avatar: AVATAR_OPTIONS[0]!,
+    });
+
+    const token = await this.jwt.signAccessToken(String(doc._id), normalizeIranianPhone(doc.phone));
+    return { token, user: this.toPublic(doc) };
+  }
+
+  async checkTelegramUser(initData: string): Promise<{ token: string; user: PublicProfile } | null> {
+    const verified = verifyTelegramInitData(initData, this.platformTokens.telegramBotToken ?? "");
+    const existing = await this.users.findByTelegramUserId(String(verified.user.id));
+    if (!existing) return null;
+
+    const token = await this.jwt.signAccessToken(String(existing._id), normalizeIranianPhone(existing.phone));
+    return { token, user: this.toPublic(existing) };
+  }
+
+  async verifyTelegramContact(input: {
+    initData: string;
+    phoneNumber: string;
+    username?: string;
+  }): Promise<{ token: string; user: PublicProfile }> {
+    const verified = verifyTelegramInitData(input.initData, this.platformTokens.telegramBotToken ?? "");
+    const telegramUserId = String(verified.user.id);
+    const phone = normalizeIranianPhone(input.phoneNumber);
+    const existingTelegram = await this.users.findByTelegramUserId(telegramUserId);
+    if (existingTelegram) {
+      const token = await this.jwt.signAccessToken(String(existingTelegram._id), normalizeIranianPhone(existingTelegram.phone));
+      return { token, user: this.toPublic(existingTelegram) };
+    }
+
+    const existingPhone = await this.users.findByPhone(phone);
+    if (existingPhone) {
+      const linked = await this.users.linkTelegramById(String(existingPhone._id), telegramUserId);
+      if (!linked) throw new AppError("اتصال تلگرام ناموفق بود", "telegram_link_failed", 500);
+      const token = await this.jwt.signAccessToken(String(linked._id), normalizeIranianPhone(linked.phone));
+      return { token, user: this.toPublic(linked) };
+    }
+
+    const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), this.bcryptCost);
+    const displayName = (verified.user.first_name?.trim() || input.username?.trim() || "بازیکن تلگرام").slice(0, 32);
+    const doc = await this.users.create({
+      phone,
+      username: input.username,
+      telegramUserId,
+      telegramLinkedAt: new Date(),
       passwordHash,
       displayName,
       avatar: AVATAR_OPTIONS[0]!,

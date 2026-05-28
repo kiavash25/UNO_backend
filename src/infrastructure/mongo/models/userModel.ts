@@ -6,6 +6,8 @@ export type UserDoc = {
   username?: string;
   baleUserId?: string;
   baleLinkedAt?: Date;
+  telegramUserId?: string;
+  telegramLinkedAt?: Date;
   passwordHash: string;
   displayName: string;
   avatar: string;
@@ -58,6 +60,8 @@ const userSchema = new Schema<UserDoc>(
     username: { type: String, unique: true, sparse: true, trim: true, lowercase: true },
     baleUserId: { type: String, unique: true, sparse: true, trim: true, index: true },
     baleLinkedAt: { type: Date, required: false },
+    telegramUserId: { type: String, unique: true, sparse: true, trim: true, index: true },
+    telegramLinkedAt: { type: Date, required: false },
     passwordHash: { type: String, required: true, select: false },
     displayName: { type: String, required: true, trim: true },
     avatar: { type: String, required: true, default: "/assets/avatars/avatar_1.png" },

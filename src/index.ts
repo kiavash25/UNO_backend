@@ -77,7 +77,10 @@ async function main() {
     avatar: "https://api.dicebear.com/9.x/adventurer/svg?seed=Admin",
   });
   const feedbackService = new FeedbackService(feedbackRepo);
-  const userService = new UserService(userRepo, jwt, env.BCRYPT_COST, env.BALE_BOT_TOKEN);
+  const userService = new UserService(userRepo, jwt, env.BCRYPT_COST, {
+    baleBotToken: env.BALE_BOT_TOKEN,
+    telegramBotToken: env.TELEGRAM_BOT_TOKEN,
+  });
 
   const app = createHttpApp({ adminService, feedbackService, roomService, userService });
   const server = http.createServer(app);

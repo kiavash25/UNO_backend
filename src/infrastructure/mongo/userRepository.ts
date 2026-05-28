@@ -10,6 +10,8 @@ export type UserPatch = Partial<
     | "username"
     | "baleUserId"
     | "baleLinkedAt"
+    | "telegramUserId"
+    | "telegramLinkedAt"
     | "avatar"
     | "isBot"
     | "botProfile"
@@ -64,6 +66,8 @@ export class UserRepository {
     username?: string;
     baleUserId?: string;
     baleLinkedAt?: Date;
+    telegramUserId?: string;
+    telegramLinkedAt?: Date;
     passwordHash: string;
     displayName: string;
     avatar: string;
@@ -82,6 +86,10 @@ export class UserRepository {
 
   async findByBaleUserId(baleUserId: string): Promise<UserDoc | null> {
     return UserModel.findOne({ baleUserId: baleUserId.trim() }).lean<UserDoc>().exec();
+  }
+
+  async findByTelegramUserId(telegramUserId: string): Promise<UserDoc | null> {
+    return UserModel.findOne({ telegramUserId: telegramUserId.trim() }).lean<UserDoc>().exec();
   }
 
   async findForLogin(phone: string): Promise<(UserDoc & { passwordHash: string }) | null> {
@@ -110,6 +118,16 @@ export class UserRepository {
     return UserModel.findByIdAndUpdate(
       id,
       { $set: { baleUserId: baleUserId.trim(), baleLinkedAt: new Date() } },
+      { new: true },
+    )
+      .lean<UserDoc>()
+      .exec();
+  }
+
+  async linkTelegramById(id: string, telegramUserId: string): Promise<UserDoc | null> {
+    return UserModel.findByIdAndUpdate(
+      id,
+      { $set: { telegramUserId: telegramUserId.trim(), telegramLinkedAt: new Date() } },
       { new: true },
     )
       .lean<UserDoc>()

@@ -12,6 +12,8 @@ export function createAuthRouter(userService: UserService): Router {
   router.post("/platform-login", asyncHandler(controller.platformLogin));
   router.post("/check-bale-user", asyncHandler(controller.checkBaleUser));
   router.post("/verify-bale", asyncHandler(controller.verifyBaleContact));
+  router.post("/check-telegram-user", asyncHandler(controller.checkTelegramUser));
+  router.post("/verify-telegram", asyncHandler(controller.verifyTelegramContact));
 
   return router;
 }

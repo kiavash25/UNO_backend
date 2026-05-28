@@ -35,7 +35,7 @@ const baleInitBody = z.object({
   initData: z.string().min(1).max(4096),
 });
 
-const baleContactBody = z.object({
+const platformContactBody = z.object({
   initData: z.string().min(1).max(4096),
   phoneNumber: phoneSchema,
   username: z.string().min(1).max(64).optional(),
@@ -80,8 +80,24 @@ export class AuthController {
   };
 
   verifyBaleContact: express.RequestHandler = async (req, res) => {
-    const body = baleContactBody.parse(req.body);
+    const body = platformContactBody.parse(req.body);
     const out = await this.users.verifyBaleContact(body);
+    res.status(200).json({ success: true, data: out });
+  };
+
+  checkTelegramUser: express.RequestHandler = async (req, res) => {
+    const body = baleInitBody.parse(req.body);
+    const out = await this.users.checkTelegramUser(body.initData);
+    if (!out) {
+      res.status(404).json({ success: false, error: "telegram_user_not_found" });
+      return;
+    }
+    res.status(200).json({ success: true, data: out });
+  };
+
+  verifyTelegramContact: express.RequestHandler = async (req, res) => {
+    const body = platformContactBody.parse(req.body);
+    const out = await this.users.verifyTelegramContact(body);
     res.status(200).json({ success: true, data: out });
   };
 }
