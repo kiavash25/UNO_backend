@@ -21,36 +21,35 @@ function shuffleRandom<T>(arr: T[]): T[] {
   return a;
 }
 
-function colorRunPenalty(cards: UnoCard[], candidate: UnoCard): number {
-  const last = cards[cards.length - 1];
-  const prev = cards[cards.length - 2];
-
-  let penalty = 0;
-  if (last?.color === candidate.color) penalty += 10;
-  if (last?.color === candidate.color && prev?.color === candidate.color) penalty += 100;
-  if (candidate.color === "black") penalty += 1;
-  return penalty;
-}
-
 function smoothColorRuns(cards: UnoCard[]): UnoCard[] {
-  const pool = shuffleRandom(cards);
-  const result: UnoCard[] = [];
+  const result = shuffleRandom(cards);
 
-  while (pool.length > 0) {
-    let bestIndex = 0;
-    let bestPenalty = Number.POSITIVE_INFINITY;
+  for (let i = 2; i < result.length; i++) {
+    const a = result[i - 2];
+    const b = result[i - 1];
+    const c = result[i];
+    if (!a || !b || !c) continue;
+    if (a.color !== b.color || b.color !== c.color) continue;
 
-    for (let i = 0; i < pool.length; i++) {
-      const candidate = pool[i]!;
-      const penalty = colorRunPenalty(result, candidate);
-      if (penalty < bestPenalty) {
-        bestPenalty = penalty;
-        bestIndex = i;
-        if (penalty === 0) break;
+    let swapIndex = -1;
+    for (let j = i + 1; j < result.length; j++) {
+      const candidate = result[j];
+      if (!candidate) continue;
+      if (candidate.color === c.color) continue;
+
+      const prev = result[i - 1];
+      const next = result[i + 1];
+      const createsPrevRun = prev?.color === candidate.color && a.color === candidate.color;
+      const createsNextRun = next?.color === candidate.color && prev?.color === candidate.color;
+      if (!createsPrevRun && !createsNextRun) {
+        swapIndex = j;
+        break;
       }
     }
 
-    result.push(pool.splice(bestIndex, 1)[0]!);
+    if (swapIndex >= 0) {
+      [result[i], result[swapIndex]] = [result[swapIndex]!, result[i]!];
+    }
   }
 
   return result;

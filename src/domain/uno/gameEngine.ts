@@ -69,6 +69,27 @@ function drawForPlayer(state: UnoGameState, playerId: PlayerId): void {
   hand.push(popDrawPile(state));
 }
 
+function drawOpeningCard(deck: UnoCard[], blackCardCount: number): UnoCard {
+  const next = deck.pop();
+  if (!next) throw new Error("deck underflow");
+  if (next.color !== "black" || blackCardCount === 0) return next;
+
+  let replacementIndex = -1;
+  for (let i = deck.length - 1; i >= 0; i--) {
+    if (deck[i]?.color !== "black") {
+      replacementIndex = i;
+      break;
+    }
+  }
+  if (replacementIndex < 0) {
+    return next;
+  }
+
+  const replacement = deck.splice(replacementIndex, 1)[0]!;
+  deck.unshift(next);
+  return replacement;
+}
+
 export function penalizeMissedUno(state: UnoGameState, playerId: PlayerId): boolean {
   const hand = state.hands[playerId];
   if (!hand || hand.length !== 1) return false;
@@ -104,13 +125,17 @@ export function startNewGame(
 
   let deck = createShuffledDeck(roster.length);
   const hands: Record<PlayerId, UnoCard[]> = {};
+  const openingBlackCounts: Record<PlayerId, number> = {};
   for (const p of roster) hands[p.id] = [];
+  for (const p of roster) openingBlackCounts[p.id] = 0;
 
   for (let r = 0; r < 7; r++) {
     for (const p of roster) {
-      const c = deck.pop();
-      if (!c) throw new Error("deck underflow");
+      const c = drawOpeningCard(deck, openingBlackCounts[p.id] ?? 0);
       hands[p.id]!.push(c);
+      if (c.color === "black") {
+        openingBlackCounts[p.id] = (openingBlackCounts[p.id] ?? 0) + 1;
+      }
     }
   }
 
