@@ -29,7 +29,11 @@ function chooseBotCard(state: UnoGameState, playerId: string): UnoCard | null {
   const top = state.discardPile[state.discardPile.length - 1];
   if (!top) return null;
   const legal = state.pendingDrawStack
-    ? hand.filter((c) => c.rank === "wild4" || (c.rank === "draw2" && c.color === state.pendingDrawStack?.color))
+    ? hand.filter((c) => {
+        if (c.rank === "wild4") return true;
+        if (c.rank !== "draw2") return false;
+        return state.pendingDrawStack?.sourceRank === "draw2" || c.color === state.pendingDrawStack?.color;
+      })
     : hand.filter((c) => cardMatchesTop(c, top, state.currentColor));
   if (!legal.length) return null;
 

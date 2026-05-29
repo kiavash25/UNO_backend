@@ -103,8 +103,13 @@ export function penalizeMissedUno(state: UnoGameState, playerId: PlayerId): bool
   return true;
 }
 
-function isDrawStackCard(card: UnoCard, currentColor: Exclude<UnoColor, "black">): boolean {
-  return card.rank === "wild4" || (card.rank === "draw2" && card.color === currentColor);
+function isDrawStackCard(
+  card: UnoCard,
+  pendingDrawStack: { color: Exclude<UnoColor, "black">; sourceRank: "draw2" | "wild4" },
+): boolean {
+  if (card.rank === "wild4") return true;
+  if (card.rank !== "draw2") return false;
+  return pendingDrawStack.sourceRank === "draw2" || card.color === pendingDrawStack.color;
 }
 
 function syncPublicPlayers(state: UnoGameState): void {
@@ -197,7 +202,7 @@ function applyCardEffect(state: UnoGameState, played: UnoCard, chosenColor?: Exc
     if (played.rank === "wild4") {
       const targetIndex = stepActiveTurn(state, 1);
       const targetId = state.players[targetIndex]!.id;
-      state.pendingDrawStack = { playerId: targetId, amount: pendingAmount + 4, color };
+      state.pendingDrawStack = { playerId: targetId, amount: pendingAmount + 4, color, sourceRank: "wild4" };
       state.turnIndex = targetIndex;
     } else {
       state.pendingDrawStack = null;
@@ -229,6 +234,7 @@ function applyCardEffect(state: UnoGameState, played: UnoCard, chosenColor?: Exc
         playerId: targetId,
         amount: pendingAmount + 2,
         color: played.color as Exclude<UnoColor, "black">,
+        sourceRank: "draw2",
       };
       state.turnIndex = targetIndex;
       break;
@@ -299,8 +305,8 @@ export function playCard(
     if (state.pendingDrawStack.playerId !== playerId) {
       return { ok: false, code: "turn", message: "نوبت شما نیست" };
     }
-    if (!isDrawStackCard(card, state.pendingDrawStack.color)) {
-      return { ok: false, code: "draw_stack", message: "برای انتقال جریمه باید +4 یا +2 همان رنگ بازی کنید" };
+    if (!isDrawStackCard(card, state.pendingDrawStack)) {
+      return { ok: false, code: "draw_stack", message: "Only legal +2 or +4 cards can be stacked on a draw penalty" };
     }
   } else if (!cardMatchesTop(card, top, state.currentColor)) {
     return { ok: false, code: "illegal", message: "این کارت قابل بازی نیست" };

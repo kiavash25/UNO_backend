@@ -19,6 +19,7 @@ export type UnoDrawStack = {
   playerId: PlayerId;
   amount: number;
   color: Exclude<UnoColor, "black">;
+  sourceRank: "draw2" | "wild4";
 };
 
 export type UnoGameState = {
