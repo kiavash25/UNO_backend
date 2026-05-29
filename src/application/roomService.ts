@@ -514,14 +514,14 @@ export class RoomService {
 
   async createBotMatch(displayName: string, totalPlayers: number, avatar?: string, gameId = "uno", userId?: string): Promise<BotMatchResult> {
     const game = this.gameDefinition(gameId);
-    if (!game.chooseBotAction) throw new AppError("این بازی فعلا بات ندارد", "unsupported_bot", 400);
+    if (!game.chooseBotAction) throw new AppError("این بازی فعلا یاری ندارد", "unsupported_bot", 400);
     if (totalPlayers < game.minPlayers || totalPlayers > Math.min(4, game.maxPlayers)) {
       throw new AppError(`تعداد بازیکن باید بین ${game.minPlayers} تا ${Math.min(4, game.maxPlayers)} باشد`, "bad_settings");
     }
 
     const created = await this.createRoom(displayName, avatar, {
       gameId,
-      name: "بازی با بات",
+      name: "بازی با دیگران",
       maxPlayers: totalPlayers,
       mode: "classic",
       isPrivate: true,

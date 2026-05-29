@@ -1,5 +1,5 @@
 import { cardMatchesTop, isWild, type UnoCard, type UnoColor } from "./card.js";
-import { createShuffledDeck, shuffle } from "./deck.js";
+import { createShuffledDeck, shuffleUnoCards } from "./deck.js";
 import type { Direction, PlayerId, UnoGameState, UnoPublicPlayer } from "./gameState.js";
 
 export type PlayResult =
@@ -44,7 +44,7 @@ function ensureDeck(state: UnoGameState): void {
   const keep = state.discardPile.pop();
   if (!keep) throw new Error("cannot replenish deck");
   const rest = state.discardPile.splice(0, state.discardPile.length);
-  state.drawPile = shuffle(rest);
+  state.drawPile = shuffleUnoCards(rest);
   state.discardPile.push(keep);
 }
 
@@ -122,7 +122,7 @@ export function startNewGame(
       break;
     }
     deck.unshift(c);
-    deck = shuffle(deck);
+    deck = shuffleUnoCards(deck);
   }
   if (!starter) throw new Error("no non-wild starter");
 
