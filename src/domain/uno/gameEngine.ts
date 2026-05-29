@@ -102,7 +102,7 @@ export function startNewGame(
     throw new Error("player count must be 2..10");
   }
 
-  let deck = createShuffledDeck();
+  let deck = createShuffledDeck(roster.length);
   const hands: Record<PlayerId, UnoCard[]> = {};
   for (const p of roster) hands[p.id] = [];
 

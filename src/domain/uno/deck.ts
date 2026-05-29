@@ -12,20 +12,24 @@ function make(color: UnoColor, rank: UnoRank): UnoCard {
 }
 
 /** دست استاندارد UNO (بدون کارت‌های سفارشی برند). */
-export function createShuffledDeck(): UnoCard[] {
+export function createShuffledDeck(playerCount: number): UnoCard[] {
+  if (playerCount < 2 || playerCount > 10) {
+    throw new Error("player count must be 2..10");
+  }
+
   const deck: UnoCard[] = [];
 
   for (const c of COLORS) {
     for (const r of NUMBER_RANKS) {
-      deck.push(make(c, r), make(c, r));
+      deck.push(make(c, r));
     }
-    deck.push(make(c, "skip"), make(c, "skip"));
-    deck.push(make(c, "reverse"), make(c, "reverse"));
-    deck.push(make(c, "draw2"), make(c, "draw2"));
+    deck.push(make(c, "skip"));
+    deck.push(make(c, "reverse"));
+    deck.push(make(c, "draw2"));
   }
 
-  for (let i = 0; i < 4; i++) deck.push(make("black", "wild"));
-  for (let i = 0; i < 4; i++) deck.push(make("black", "wild4"));
+  for (let i = 0; i < playerCount; i++) deck.push(make("black", "wild"));
+  for (let i = 0; i < playerCount; i++) deck.push(make("black", "wild4"));
 
   return shuffle(deck);
 }
