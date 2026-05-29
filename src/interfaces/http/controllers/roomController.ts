@@ -33,6 +33,7 @@ const botMatchBody = z.object({
   displayName: z.string().min(1).max(32),
   avatar: z.string().min(1).max(128).optional(),
   totalPlayers: z.number().int().min(2).max(4),
+  mode: z.enum(["classic", "fast"]).optional(),
 });
 
 export class RoomController {
@@ -69,7 +70,14 @@ export class RoomController {
 
   createBotMatch: express.RequestHandler = async (req, res) => {
     const body = botMatchBody.parse(req.body);
-    const result = await this.rooms.createBotMatch(body.displayName, body.totalPlayers, body.avatar, body.gameId, req.authed?.userId);
+    const result = await this.rooms.createBotMatch(
+      body.displayName,
+      body.totalPlayers,
+      body.avatar,
+      body.gameId,
+      req.authed?.userId,
+      body.mode,
+    );
     res.status(201).json(result);
   };
 

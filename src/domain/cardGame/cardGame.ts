@@ -34,6 +34,7 @@ export type CardGameDefinition<TState = unknown> = {
   projectStateForPlayer(state: TState, viewerId: string): unknown;
   applyAction(state: TState, playerId: string, action: CardGameAction): CardGameActionResult;
   handleTurnTimeout?(state: TState, playerId: string): CardGameActionResult;
+  finishTimedMatch?(state: TState): CardGameActionResult;
   removePlayer?(state: TState, playerId: string): CardGameActionResult;
   getPlayerResult?(state: TState, playerId: string): { eligible: boolean; won: boolean };
   getActivePlayerId(state: TState): string | null;

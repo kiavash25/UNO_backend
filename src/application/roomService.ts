@@ -114,10 +114,16 @@ function getTurnTimeoutMs(state: LiveRoomState, fallbackMs = 10_000): number {
   return Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec * 1000 : fallbackMs;
 }
 
+function getMatchDurationMs(state: LiveRoomState): number | null {
+  return state.settings.mode === "fast" ? 60_000 : null;
+}
+
 export class RoomService {
   private readonly botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly matchTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly defaultTurnTimeoutMs = 10_000;
+  private readonly fastTurnTimeoutMs = 3_000;
 
   constructor(
     private readonly rooms: RoomRepository,
@@ -183,12 +189,18 @@ export class RoomService {
     if (opts.resetTurnTimer || (state.phase === "playing" && !state.turnDeadlineAt)) {
       this.resetTurnDeadline(state);
     }
+    if (state.phase === "playing" && state.settings.mode === "fast" && !state.matchDeadlineAt) {
+      const durationMs = getMatchDurationMs(state);
+      state.matchDeadlineAt = durationMs ? Date.now() + durationMs : null;
+    }
     if (state.phase !== "playing") {
       state.turnDeadlineAt = null;
+      state.matchDeadlineAt = null;
     }
     await this.live.save(state);
     this.events.onRoomChanged?.(state.id);
     this.scheduleTurnTimeout(state.id);
+    this.scheduleMatchTimeout(state.id);
     this.scheduleBotTurn(state.id);
   }
 
@@ -220,6 +232,12 @@ export class RoomService {
     this.turnTimers.delete(roomId);
   }
 
+  private clearMatchTimer(roomId: string): void {
+    const pending = this.matchTimers.get(roomId);
+    if (pending) clearTimeout(pending);
+    this.matchTimers.delete(roomId);
+  }
+
   private scheduleTurnTimeout(roomId: string): void {
     this.clearTurnTimer(roomId);
     void (async () => {
@@ -234,6 +252,23 @@ export class RoomService {
         void this.runTurnTimeout(roomId, activePlayerId, deadline);
       }, delayMs);
       this.turnTimers.set(roomId, timer);
+    })();
+  }
+
+  private scheduleMatchTimeout(roomId: string): void {
+    this.clearMatchTimer(roomId);
+    void (async () => {
+      const state = await this.live.load(roomId);
+      if (!state || state.phase !== "playing" || !state.game || state.settings.mode !== "fast" || !state.matchDeadlineAt) {
+        return;
+      }
+
+      const deadline = state.matchDeadlineAt;
+      const delayMs = Math.max(0, deadline - Date.now());
+      const timer = setTimeout(() => {
+        void this.runMatchTimeout(roomId, deadline);
+      }, delayMs);
+      this.matchTimers.set(roomId, timer);
     })();
   }
 
@@ -275,6 +310,24 @@ export class RoomService {
     if (eliminated) {
       this.trackAnalytics(this.analytics?.playerEliminated(state, playerId, "timeout") ?? Promise.resolve());
     }
+  }
+
+  private async runMatchTimeout(roomId: string, expectedDeadline: number): Promise<void> {
+    this.matchTimers.delete(roomId);
+    const state = await this.live.load(roomId);
+    if (!state || state.phase !== "playing" || !state.game) return;
+    if (state.settings.mode !== "fast" || state.matchDeadlineAt !== expectedDeadline || Date.now() < expectedDeadline) return;
+
+    const game = this.gameForRoom(state);
+    const result = game.finishTimedMatch?.(state.game);
+    if (result && !result.ok) return;
+
+    this.handleGameEvents(state, result?.events);
+    state.phase = "finished";
+    this.bump(state);
+    await this.persist(state);
+    await this.applyBotRewardsIfFinished(state);
+    this.trackAnalytics(this.analytics?.finishGame(state, buildMatchRewards(state)) ?? Promise.resolve());
   }
 
   private scheduleBotTurn(roomId: string): void {
@@ -343,13 +396,14 @@ export class RoomService {
   private defaultSettings(partial: Partial<RoomSettings> & Pick<RoomSettings, "name">): RoomSettings {
     const gameId = partial.gameId ?? "uno";
     const game = this.gameDefinition(gameId);
+    const mode = partial.mode ?? "classic";
     return {
       gameId,
       name: partial.name,
       maxPlayers: partial.maxPlayers ?? Math.min(4, game.maxPlayers),
-      mode: partial.mode ?? "classic",
+      mode,
       isPrivate: partial.isPrivate ?? true,
-      turnTimeoutSec: this.defaultTurnTimeoutMs / 1000,
+      turnTimeoutSec: (mode === "fast" ? this.fastTurnTimeoutMs : this.defaultTurnTimeoutMs) / 1000,
     };
   }
 
@@ -392,6 +446,7 @@ export class RoomService {
       phase: "lobby",
       game: null,
       turnDeadlineAt: null,
+      matchDeadlineAt: null,
       matchRewardsClaimed: {},
       version: 1,
     };
@@ -512,7 +567,14 @@ export class RoomService {
     return { ...created, created: true };
   }
 
-  async createBotMatch(displayName: string, totalPlayers: number, avatar?: string, gameId = "uno", userId?: string): Promise<BotMatchResult> {
+  async createBotMatch(
+    displayName: string,
+    totalPlayers: number,
+    avatar?: string,
+    gameId = "uno",
+    userId?: string,
+    mode: RoomSettings["mode"] = "classic",
+  ): Promise<BotMatchResult> {
     const game = this.gameDefinition(gameId);
     if (!game.chooseBotAction) throw new AppError("این بازی فعلا یاری ندارد", "unsupported_bot", 400);
     if (totalPlayers < game.minPlayers || totalPlayers > Math.min(4, game.maxPlayers)) {
@@ -523,7 +585,7 @@ export class RoomService {
       gameId,
       name: "بازی با دیگران",
       maxPlayers: totalPlayers,
-      mode: "classic",
+      mode,
       isPrivate: true,
     }, userId);
 
@@ -698,6 +760,10 @@ export class RoomService {
     const roster = state.players.map((p) => ({ id: p.id, displayName: p.displayName, avatar: p.avatar }));
     state.game = game.createInitialState(roster);
     state.phase = "playing";
+    state.matchDeadlineAt =
+      state.settings.mode === "fast"
+        ? Date.now() + (getMatchDurationMs(state) ?? 0)
+        : null;
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
     this.trackAnalytics(this.analytics?.gameStarted(state) ?? Promise.resolve());
@@ -864,6 +930,8 @@ export function clientRoomView(state: LiveRoomState, viewerId: string) {
     serverNow: Date.now(),
     turnTimeoutMs: getTurnTimeoutMs(state),
     turnDeadlineAt: state.turnDeadlineAt ?? null,
+    matchDurationMs: getMatchDurationMs(state),
+    matchDeadlineAt: state.matchDeadlineAt ?? null,
     game: state.game && game ? game.projectStateForPlayer(state.game, viewerId) : null,
     matchRewards: state.phase === "finished" ? buildMatchRewards(state) : [],
   };

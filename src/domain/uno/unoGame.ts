@@ -9,6 +9,7 @@ import {
   playCard,
   removePlayerFromGame,
   startNewGame,
+  finishTimedMatch,
 } from "./gameEngine.js";
 import type { UnoGameState } from "./gameState.js";
 import { projectUnoGameStateForPlayer } from "./projection.js";
@@ -158,6 +159,10 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
             },
           ],
     };
+  },
+
+  finishTimedMatch(state) {
+    return finishTimedMatch(state);
   },
 
   removePlayer(state, playerId) {

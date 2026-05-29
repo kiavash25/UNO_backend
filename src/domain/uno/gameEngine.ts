@@ -415,3 +415,28 @@ export function callUno(state: UnoGameState, playerId: PlayerId): PlayResult {
   syncPublicPlayers(state);
   return { ok: true, state };
 }
+
+export function finishTimedMatch(state: UnoGameState): PlayResult {
+  if (state.status === "finished") return { ok: true, state };
+
+  syncPublicPlayers(state);
+  const contenders = state.players
+    .filter((player) => !state.eliminatedPlayerIds?.[player.id])
+    .sort((a, b) => {
+      const handCountDelta = (state.hands[a.id]?.length ?? a.handCount) - (state.hands[b.id]?.length ?? b.handCount);
+      if (handCountDelta !== 0) return handCountDelta;
+      return a.displayName.localeCompare(b.displayName, "fa");
+    });
+
+  const fallback = [...state.players].sort((a, b) => {
+    const handCountDelta = (state.hands[a.id]?.length ?? a.handCount) - (state.hands[b.id]?.length ?? b.handCount);
+    if (handCountDelta !== 0) return handCountDelta;
+    return a.displayName.localeCompare(b.displayName, "fa");
+  });
+
+  const winner = contenders[0] ?? fallback[0] ?? null;
+  state.status = "finished";
+  state.winnerId = winner?.id ?? null;
+  syncPublicPlayers(state);
+  return { ok: true, state };
+}
