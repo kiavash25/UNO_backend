@@ -81,7 +81,7 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
   id: "uno",
   displayName: "UNO",
   minPlayers: 2,
-  maxPlayers: 10,
+  maxPlayers: 4,
 
   createInitialState: startNewGame,
 

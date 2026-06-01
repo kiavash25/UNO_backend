@@ -14,6 +14,49 @@ export type GameScoringRules = {
 };
 
 export const gameScoringRules: Record<string, GameScoringRules> = {
+  exploding_kittens: {
+    private: {
+      ranks: {
+        1: { xp: 120, coins: 50 },
+        2: { xp: 60, coins: 25 },
+        3: { xp: 35, coins: 15 },
+      },
+      rest: { xp: 20, coins: 10 },
+    },
+    public: {
+      2: {
+        ranks: {
+          1: { xp: 90, coins: 35 },
+          2: { xp: 20, coins: 8 },
+        },
+        rest: { xp: 20, coins: 8 },
+      },
+      3: {
+        ranks: {
+          1: { xp: 120, coins: 50 },
+          2: { xp: 55, coins: 22 },
+          3: { xp: 25, coins: 10 },
+        },
+        rest: { xp: 25, coins: 10 },
+      },
+      4: {
+        ranks: {
+          1: { xp: 150, coins: 65 },
+          2: { xp: 75, coins: 32 },
+          3: { xp: 40, coins: 18 },
+        },
+        rest: { xp: 20, coins: 8 },
+      },
+      5: {
+        ranks: {
+          1: { xp: 180, coins: 80 },
+          2: { xp: 95, coins: 42 },
+          3: { xp: 55, coins: 24 },
+        },
+        rest: { xp: 25, coins: 10 },
+      },
+    },
+  },
   uno: {
     private: {
       ranks: {

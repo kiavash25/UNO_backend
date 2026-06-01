@@ -1,4 +1,5 @@
 import type { CardGameDefinition } from "./cardGame.js";
+import { explodingKittensGameDefinition } from "../explodingKittens/explodingKittensGame.js";
 import { unoGameDefinition } from "../uno/unoGame.js";
 
 const games = new Map<string, CardGameDefinition>();
@@ -16,4 +17,4 @@ export function listCardGames(): CardGameDefinition[] {
 }
 
 registerCardGame(unoGameDefinition);
-
+registerCardGame(explodingKittensGameDefinition);
