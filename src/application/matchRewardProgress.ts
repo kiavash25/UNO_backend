@@ -1,6 +1,7 @@
 import { getRankReward } from "../domain/cardGame/gameScoring.js";
 import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/userModel.js";
 import type { UserPatch } from "../infrastructure/mongo/userRepository.js";
+import { computeNextDailyWinStreak } from "./dailyStreak.js";
 import { levelFromXp } from "./userProfile.js";
 import type { MatchRewardContext } from "./userService.js";
 
@@ -21,6 +22,17 @@ export function buildMatchRewardPatch(user: UserDoc, result: MatchRewardContext)
   const coins = user.coins + reward.coins;
   const winStreak = won ? user.winStreak + 1 : 0;
   const bestWinStreak = won ? Math.max(user.bestWinStreak, winStreak) : user.bestWinStreak;
+  const dailyStreakState = won
+    ? computeNextDailyWinStreak({
+        currentStreak: user.dailyWinStreak,
+        bestStreak: user.bestDailyWinStreak,
+        lastWinDayKey: user.lastDailyWinDayKey,
+      })
+    : {
+        dailyWinStreak: user.dailyWinStreak ?? 0,
+        bestDailyWinStreak: user.bestDailyWinStreak ?? 0,
+        lastDailyWinDayKey: user.lastDailyWinDayKey,
+      };
   const level = levelFromXp(xp);
   const accuracyPct = Math.min(100, Math.round((wins / gamesPlayed) * 100));
   const gameStats = normalizeGameStats(user.gameStats);
@@ -38,6 +50,9 @@ export function buildMatchRewardPatch(user: UserDoc, result: MatchRewardContext)
     coins,
     winStreak,
     bestWinStreak,
+    dailyWinStreak: dailyStreakState.dailyWinStreak,
+    bestDailyWinStreak: dailyStreakState.bestDailyWinStreak,
+    lastDailyWinDayKey: dailyStreakState.lastDailyWinDayKey,
     level,
     accuracyPct,
     gameStats,

@@ -6,6 +6,7 @@ import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/user
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
 import { AppError } from "./errors.js";
 import { buildMatchRewardPatch } from "./matchRewardProgress.js";
+import { getEffectiveDailyWinStreak } from "./dailyStreak.js";
 import {
   isAllowedAvatar,
   rankTitleForLevel,
@@ -29,6 +30,8 @@ export type PublicProfile = {
   gamesPlayed: number;
   winStreak: number;
   bestWinStreak: number;
+  dailyWinStreak: number;
+  bestDailyWinStreak: number;
   accuracyPct: number;
   gameStats: Record<string, UserGameStats>;
   createdAt: Date;
@@ -96,6 +99,11 @@ export class UserService {
 
   private toPublic(user: UserDoc): PublicProfile {
     const { xpIntoLevel, xpForNextLevel, level } = xpProgress(user.xp);
+    const dailyWinStreak = getEffectiveDailyWinStreak({
+      currentStreak: user.dailyWinStreak,
+      lastWinDayKey: user.lastDailyWinDayKey,
+    });
+
     return {
       id: String(user._id),
       phone: normalizeIranianPhone(user.phone),
@@ -111,6 +119,8 @@ export class UserService {
       gamesPlayed: user.gamesPlayed,
       winStreak: user.winStreak,
       bestWinStreak: user.bestWinStreak,
+      dailyWinStreak,
+      bestDailyWinStreak: Math.max(user.bestDailyWinStreak ?? 0, dailyWinStreak),
       accuracyPct: user.accuracyPct,
       gameStats: this.normalizeGameStats(user.gameStats),
       createdAt: user.createdAt,
