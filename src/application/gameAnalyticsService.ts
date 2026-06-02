@@ -1,8 +1,6 @@
 import { createHash } from "crypto";
 import type { Redis } from "ioredis";
-import type { CardGameAction, CardGameEvent } from "../domain/cardGame/cardGame.js";
-import type { UnoCard, UnoColor } from "../domain/uno/card.js";
-import type { UnoGameState } from "../domain/uno/gameState.js";
+import { getCardGame } from "../domain/cardGame/gameRegistry.js";
 import type { GameReportRepository } from "../infrastructure/mongo/gameReportRepository.js";
 import { redisKeys } from "../infrastructure/redis/keys.js";
 import type { LiveRoomState } from "./liveRoomState.js";
@@ -31,27 +29,18 @@ type AnalyticsMeta = {
   playersById: Record<string, AnalyticsPlayer>;
 };
 
-type UnoActionAnalytics = {
-  roomId: string;
+type GameActionAnalyticsInput = {
+  state: LiveRoomState;
   playerId: string;
-  action: CardGameAction | { type: "timeout" };
-  before: UnoGameState;
-  after: UnoGameState;
+  action: { type: string; [key: string]: unknown };
+  before: unknown;
   startedAtMs: number;
   endedAtMs: number;
-  events?: CardGameEvent[];
+  events?: { type: string; payload?: Record<string, unknown> }[];
   penaltyCards?: number;
 };
 
 const ANALYTICS_TTL_SEC = 60 * 60 * 24 * 14;
-
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function topDiscard(state: UnoGameState): UnoCard | null {
-  return state.discardPile[state.discardPile.length - 1] ?? null;
-}
 
 function publicPlayer(lobby: LobbyPlayer, userId?: string, sessionId?: string): AnalyticsPlayer {
   return {
@@ -77,21 +66,6 @@ function sessionAnalyticsId(sessionToken: string): string {
   return createHash("sha256").update(sessionToken).digest("hex").slice(0, 24);
 }
 
-function activeRanking(state: UnoGameState): string[] {
-  const active = state.players
-    .filter((player) => !player.eliminated && !state.eliminatedPlayerIds?.[player.id])
-    .sort((a, b) => a.handCount - b.handCount);
-  const winner = active.find((player) => player.id === state.winnerId);
-  const eliminated = state.players
-    .filter((player) => player.eliminated || state.eliminatedPlayerIds?.[player.id])
-    .map((player) => player.id);
-  return [
-    ...(winner ? [winner.id] : []),
-    ...active.filter((player) => player.id !== state.winnerId).map((player) => player.id),
-    ...eliminated,
-  ];
-}
-
 function normalizeRewards(playerIds: string[], rewards: unknown[]): unknown[] {
   const byPlayerId = new Map<string, unknown>();
   for (const reward of rewards) {
@@ -107,39 +81,6 @@ function normalizeRewards(playerIds: string[], rewards: unknown[]): unknown[] {
   });
 }
 
-function summarizeUno(events: Record<string, unknown>[]): Record<string, unknown> {
-  const startingHands: Record<string, UnoCard[]> = {};
-  const timeoutPenalties: Record<string, number> = {};
-  const eliminations: unknown[] = [];
-  const chats: unknown[] = [];
-
-  for (const event of events) {
-    if (event.type === "uno.started") {
-      Object.assign(startingHands, event.startingHands);
-    }
-    if (event.type === "uno.action") {
-      const playerId = String(event.playerId ?? "");
-      const action = event.action as { type?: string } | undefined;
-      if (playerId && action?.type === "timeout") {
-        timeoutPenalties[playerId] = (timeoutPenalties[playerId] ?? 0) + 1;
-      }
-      const gameEvents = Array.isArray(event.events) ? event.events : [];
-      for (const gameEvent of gameEvents as CardGameEvent[]) {
-        if (gameEvent.type === "uno.playerEliminated") eliminations.push({ ...gameEvent.payload, ts: event.ts });
-      }
-    }
-    if (event.type === "chat") chats.push(event);
-  }
-
-  return {
-    game: "uno",
-    startingHands,
-    timeoutPenalties,
-    eliminations,
-    chats,
-  };
-}
-
 export class GameAnalyticsService {
   constructor(
     private readonly redis: Redis,
@@ -152,6 +93,10 @@ export class GameAnalyticsService {
 
   private eventsKey(roomId: string): string {
     return redisKeys.gameAnalyticsEvents(roomId);
+  }
+
+  private gameForState(state: LiveRoomState) {
+    return getCardGame(state.settings.gameId ?? "uno");
   }
 
   private async loadMeta(roomId: string): Promise<AnalyticsMeta | null> {
@@ -235,50 +180,27 @@ export class GameAnalyticsService {
     }
     await this.saveMeta(meta);
 
-    if ((state.settings.gameId ?? "uno") !== "uno") return;
-    const uno = state.game as UnoGameState;
-    await this.appendEvent(state.id, {
-      type: "uno.started",
-      startingHands: clone(uno.hands),
-      topDiscard: topDiscard(uno),
-      currentColor: uno.currentColor,
-      turnIndex: uno.turnIndex,
-      direction: uno.direction,
-    });
+    const startedEvent = this.gameForState(state)?.analytics?.buildStartedEvent?.(state.game);
+    if (startedEvent) {
+      await this.appendEvent(state.id, startedEvent);
+    }
   }
 
-  async unoAction(input: UnoActionAnalytics): Promise<void> {
-    const action = input.action as CardGameAction & { chosenColor?: Exclude<UnoColor, "black">; declareUno?: boolean };
-    const afterPlayer = input.after.players.find((player) => player.id === input.playerId);
-    await this.appendEvent(input.roomId, {
-      type: "uno.action",
+  async gameAction(input: GameActionAnalyticsInput): Promise<void> {
+    if (!input.state.game) return;
+    const event = this.gameForState(input.state)?.analytics?.buildActionEvent?.({
       playerId: input.playerId,
-      action: clone(input.action),
-      responseTimeMs: Math.max(0, input.endedAtMs - input.startedAtMs),
-      before: {
-        hand: clone(input.before.hands[input.playerId] ?? []),
-        allHands: clone(input.before.hands),
-        topDiscard: topDiscard(input.before),
-        currentColor: input.before.currentColor,
-        turnIndex: input.before.turnIndex,
-        direction: input.before.direction,
-      },
-      after: {
-        hand: clone(input.after.hands[input.playerId] ?? []),
-        allHands: clone(input.after.hands),
-        topDiscard: topDiscard(input.after),
-        currentColor: input.after.currentColor,
-        turnIndex: input.after.turnIndex,
-        direction: input.after.direction,
-      },
-      declaredUno: action.type === "uno" || !!action.declareUno,
-      saidUnoAfterAction: !!afterPlayer?.saidUno,
-      chosenColor: action.chosenColor,
-      directionChanged: input.before.direction !== input.after.direction,
+      action: input.action,
+      before: input.before,
+      after: input.state.game,
+      startedAtMs: input.startedAtMs,
+      endedAtMs: input.endedAtMs,
+      events: input.events,
       penaltyCards: input.penaltyCards,
-      timeoutCount: input.after.turnTimeoutCounts?.[input.playerId] ?? 0,
-      events: input.events ?? [],
     });
+    if (event) {
+      await this.appendEvent(input.state.id, event);
+    }
   }
 
   async chat(state: LiveRoomState, playerId: string, text?: string, emoji?: string): Promise<void> {
@@ -308,9 +230,13 @@ export class GameAnalyticsService {
 
     const rawEvents = await this.redis.lrange(this.eventsKey(state.id), 0, -1);
     const events = rawEvents.map((raw) => JSON.parse(raw) as Record<string, unknown>);
-    const uno = state.game as UnoGameState;
     const startedAtMs = meta.startedAtMs ?? meta.createdAtMs;
     const playerIds = Object.keys(meta.playersById);
+    const game = this.gameForState(state);
+    const ranking = game?.getRanking(state.game) ?? playerIds;
+    const winnerId = game?.getWinnerId(state.game) ?? null;
+    const gameReport = game?.analytics?.buildReport?.(state.game, events);
+
     await this.reports.upsert({
       roomId: meta.roomId,
       code: meta.code,
@@ -323,11 +249,11 @@ export class GameAnalyticsService {
       finishedAtMs: meta.finishedAtMs,
       durationMs: meta.finishedAtMs - startedAtMs,
       players: Object.values(meta.playersById),
-      winnerId: uno.winnerId ?? null,
-      ranking: activeRanking(uno),
+      winnerId,
+      ranking,
       rewards: normalizeRewards(playerIds, rewards),
       events,
-      gameReport: meta.gameId === "uno" ? summarizeUno(events) : undefined,
+      gameReport,
     });
   }
 }

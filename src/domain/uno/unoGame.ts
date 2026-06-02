@@ -1,18 +1,20 @@
 import type { CardGameAction, CardGameDefinition, CardGameEvent } from "../cardGame/cardGame.js";
 import { cardMatchesTop, isWild, type UnoCard } from "./card.js";
+import { getUnoRanking, unoAnalytics } from "./analytics.js";
 import {
-  callUno,
   applyTurnTimeout,
+  callUno,
   drawCard,
+  finishTimedMatch,
   passAfterDraw,
   penalizeMissedUno,
   playCard,
   removePlayerFromGame,
   startNewGame,
-  finishTimedMatch,
 } from "./gameEngine.js";
 import type { UnoGameState } from "./gameState.js";
 import { projectUnoGameStateForPlayer } from "./projection.js";
+import { unoRoomConfig } from "./roomConfig.js";
 
 type UnoGameAction =
   | { type: "playCard"; cardId: string; chosenColor?: "red" | "yellow" | "green" | "blue"; declareUno?: boolean }
@@ -82,6 +84,8 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
   displayName: "UNO",
   minPlayers: 2,
   maxPlayers: 4,
+  roomConfig: unoRoomConfig,
+  analytics: unoAnalytics,
 
   createInitialState: startNewGame,
 
@@ -95,10 +99,7 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     const beforeSaidUno = state.players.find((p) => p.id === playerId)?.saidUno ?? false;
     const playedCard =
       action.type === "playCard" ? state.hands[playerId]?.find((card) => card.id === action.cardId) : null;
-    const skippedPlayerId =
-      playedCard?.rank === "skip"
-        ? nextActivePlayerId(state)
-        : null;
+    const skippedPlayerId = playedCard?.rank === "skip" ? nextActivePlayerId(state) : null;
     const result =
       action.type === "playCard"
         ? playCard(state, playerId, action.cardId, {
@@ -134,7 +135,15 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     if (skippedPlayerId && state.status === "playing") {
       events.push({ type: "uno.playerSkipped", payload: { playerId: skippedPlayerId, byPlayerId: playerId } });
     }
-    if (afterSaidUno && !beforeSaidUno) events.push({ type: "uno.declared", payload: { playerId } });
+    if (afterSaidUno && !beforeSaidUno) {
+      events.push({
+        type: "game.unoDeclared",
+        payload: {
+          playerId,
+          displayName: state.players.find((player) => player.id === playerId)?.displayName ?? "بازیکن",
+        },
+      });
+    }
     return { ok: true, events };
   },
 
@@ -147,10 +156,18 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
       ok: true,
       penaltyCards: result.penaltyCards,
       events: stillPlaying
-        ? []
+        ? [
+            {
+              type: "game.turnTimedOut",
+              payload: {
+                playerId,
+                penaltyCards: result.penaltyCards ?? 1,
+              },
+            },
+          ]
         : [
             {
-              type: "uno.playerEliminated",
+              type: "game.playerEliminated",
               payload: {
                 playerId,
                 displayName: player?.displayName ?? "بازیکن",
@@ -173,7 +190,7 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
       ok: true,
       events: [
         {
-          type: "uno.playerEliminated",
+          type: "game.playerEliminated",
           payload: {
             playerId,
             displayName: player?.displayName ?? "بازیکن",
@@ -189,6 +206,14 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     const eliminated = !!state.eliminatedPlayerIds?.[playerId];
     const eligible = state.status === "finished" && !!state.winnerId && !!player && !eliminated;
     return { eligible, won: eligible && state.winnerId === playerId };
+  },
+
+  getWinnerId(state) {
+    return state.winnerId ?? null;
+  },
+
+  getRanking(state) {
+    return getUnoRanking(state);
   },
 
   getActivePlayerId(state) {

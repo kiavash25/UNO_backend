@@ -1,9 +1,9 @@
 import { attackCardDefinition } from "./attack.js";
-import { catBeardCardDefinition } from "./catBeard.js";
-import { catMelonCardDefinition } from "./catMelon.js";
-import { catPotatoCardDefinition } from "./catPotato.js";
-import { catRainbowCardDefinition } from "./catRainbow.js";
-import { catTacoCardDefinition } from "./catTaco.js";
+// import { catBeardCardDefinition } from "./catBeard.js";
+// import { catMelonCardDefinition } from "./catMelon.js";
+// import { catPotatoCardDefinition } from "./catPotato.js";
+// import { catRainbowCardDefinition } from "./catRainbow.js";
+// import { catTacoCardDefinition } from "./catTaco.js";
 import { EXPLODING_KITTENS_CARD_OVERRIDES } from "./config.js";
 import { defuseCardDefinition } from "./defuse.js";
 import { explodingKittenCardDefinition } from "./explodingKitten.js";
@@ -26,11 +26,11 @@ const baseDefinitions: ExplodingKittensCardDefinition[] = [
   nopeCardDefinition,
   defuseCardDefinition,
   explodingKittenCardDefinition,
-  catTacoCardDefinition,
-  catMelonCardDefinition,
-  catPotatoCardDefinition,
-  catBeardCardDefinition,
-  catRainbowCardDefinition,
+//   catTacoCardDefinition,
+//   catMelonCardDefinition,
+//   catPotatoCardDefinition,
+//   catBeardCardDefinition,
+//   catRainbowCardDefinition,
 ];
 
 export function listExplodingKittensCardDefinitions(): ExplodingKittensCardDefinition[] {
