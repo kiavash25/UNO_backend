@@ -126,6 +126,68 @@ function resolvePendingNopeWindow(
   return finalizeEffectResolution(state, pending.effect);
 }
 
+function nextNopeResponder(
+  state: ExplodingKittensGameState,
+  pending: Extract<ExplodingKittensPendingAction, { type: "nope_window" }>,
+  afterPlayerId: string,
+): string | null {
+  const orderedIds = state.players.map((player) => player.id);
+  const startIndex = orderedIds.indexOf(afterPlayerId);
+  if (startIndex === -1) return null;
+
+  for (let offset = 1; offset < orderedIds.length; offset += 1) {
+    const candidateId = orderedIds[(startIndex + offset) % orderedIds.length];
+    if (!candidateId || candidateId === pending.effect.actorId) continue;
+    if (state.eliminatedPlayerIds[candidateId]) continue;
+    if (pending.respondedPlayerIds.includes(candidateId)) continue;
+    return candidateId;
+  }
+
+  return null;
+}
+
+function openNopeWindow(
+  state: ExplodingKittensGameState,
+  actorId: string,
+  effect: ExplodingKittensPendingEffect,
+): boolean {
+  const pending: Extract<ExplodingKittensPendingAction, { type: "nope_window" }> = {
+    type: "nope_window",
+    effect,
+    nopeCount: 0,
+    resolverPlayerId: actorId,
+    respondedPlayerIds: [],
+  };
+  const firstResponder = nextNopeResponder(state, pending, actorId);
+  if (!firstResponder) {
+    return false;
+  }
+  state.pendingAction = {
+    ...pending,
+    resolverPlayerId: firstResponder,
+  };
+  return true;
+}
+
+function advanceNopeWindow(
+  state: ExplodingKittensGameState,
+  pending: Extract<ExplodingKittensPendingAction, { type: "nope_window" }>,
+  playerId: string,
+): CardGameActionResult {
+  pending.respondedPlayerIds = [...new Set([...pending.respondedPlayerIds, playerId])];
+  const nextResponder = nextNopeResponder(state, pending, playerId);
+  if (nextResponder) {
+    pending.resolverPlayerId = nextResponder;
+    syncPlayers(state);
+    return { ok: true, events: [] };
+  }
+
+  const resolved = resolvePendingNopeWindow(state, pending);
+  if (!resolved.ok) return resolved;
+  syncPlayers(state);
+  return resolved;
+}
+
 function findDefuseCard(state: ExplodingKittensGameState, playerId: string): ExplodingKittensCard | null {
   return state.hands[playerId]?.find((card) => card.type === "defuse") ?? null;
 }
@@ -208,6 +270,10 @@ function playNopeCard(
   playerId: string,
   action: ReturnType<typeof asPlayAction>,
 ): CardGameActionResult {
+  const activePending = state.pendingAction;
+  if (activePending?.type === "nope_window" && playerId !== activePending.resolverPlayerId) {
+    return { ok: false, code: "turn", message: "Ø§Ù„Ø§Ù† Ù†ÙˆØ¨Øª Ø§ÛŒÙ† Ø¨Ø§Ø²ÛŒÚ©Ù† Ø¨Ø±Ø§ÛŒ Ù¾Ø§Ø³Ø® Nope Ù†ÛŒØ³Øª" };
+  }
   const card = removeCardFromHand(state, playerId, action!.cardId);
   if (!card || card.type !== "nope") {
     return { ok: false, code: "card", message: "کارت Nope در دست بازیکن نیست" };
@@ -220,8 +286,8 @@ function playNopeCard(
   }
 
   pending.nopeCount += 1;
-  pending.respondedPlayerIds = [...new Set([...pending.respondedPlayerIds, playerId])];
-  syncPlayers(state);
+  const advanced = advanceNopeWindow(state, pending, playerId);
+  if (!advanced.ok) return advanced;
   return {
     ok: true,
     events: [
@@ -230,6 +296,7 @@ function playNopeCard(
         sourceCardType: pending.effect.sourceCardType,
         nopeCount: pending.nopeCount,
       }),
+      ...(advanced.events ?? []),
     ],
   };
 }
@@ -278,24 +345,20 @@ function handlePlayAction(
 
   if (result.pendingEffect) {
     if (definition.canBeNoped) {
-      state.pendingAction = {
-        type: "nope_window",
-        effect: result.pendingEffect,
-        nopeCount: 0,
-        resolverPlayerId: playerId,
-        respondedPlayerIds: [],
-      };
-      syncPlayers(state);
-      return {
-        ok: true,
-        events: [
-          makeEvent("exploding_kittens.effectPending", {
-            actorId: playerId,
-            sourceCardType: result.pendingEffect.sourceCardType,
-          }),
-          ...(result.events ?? []),
-        ],
-      };
+      const opened = openNopeWindow(state, playerId, result.pendingEffect);
+      if (opened) {
+        syncPlayers(state);
+        return {
+          ok: true,
+          events: [
+            makeEvent("exploding_kittens.effectPending", {
+              actorId: playerId,
+              sourceCardType: result.pendingEffect.sourceCardType,
+            }),
+            ...(result.events ?? []),
+          ],
+        };
+      }
     }
 
     const resolved = finalizeEffectResolution(state, result.pendingEffect);
@@ -407,13 +470,22 @@ function handleComboAction(
   }
   discardCards(state, removedCards);
 
-  state.pendingAction = {
-    type: "nope_window",
-    effect: comboEffect,
-    nopeCount: 0,
-    resolverPlayerId: playerId,
-    respondedPlayerIds: [],
-  };
+  const opened = openNopeWindow(state, playerId, comboEffect);
+  if (opened) {
+    syncPlayers(state);
+    return {
+      ok: true,
+      events: [
+        makeEvent("exploding_kittens.comboPending", {
+          actorId: playerId,
+          comboType: comboEffect.type,
+        }),
+      ],
+    };
+  }
+
+  const resolved = finalizeEffectResolution(state, comboEffect);
+  if (!resolved.ok) return resolved;
   syncPlayers(state);
   return {
     ok: true,
@@ -422,6 +494,7 @@ function handleComboAction(
         actorId: playerId,
         comboType: comboEffect.type,
       }),
+      ...(resolved.events ?? []),
     ],
   };
 }
@@ -549,9 +622,10 @@ export function applyExplodingKittensAction(
 
   if (state.pendingAction?.type === "nope_window") {
     if (action.type === "resolveNope") {
-      const resolved = resolvePendingNopeWindow(state, state.pendingAction);
-      syncPlayers(state);
-      return resolved;
+      if (playerId !== state.pendingAction.resolverPlayerId) {
+        return { ok: false, code: "turn", message: "Ø§Ù„Ø§Ù† Ù†ÙˆØ¨Øª Ø§ÛŒÙ† Ø¨Ø§Ø²ÛŒÚ©Ù† Ø¨Ø±Ø§ÛŒ Ù¾Ø§Ø³Ø® Nope Ù†ÛŒØ³Øª" };
+      }
+      return advanceNopeWindow(state, state.pendingAction, playerId);
     }
 
     if (playAction) {
@@ -592,7 +666,10 @@ export function handleExplodingKittensTurnTimeout(
   playerId: string,
 ): CardGameActionResult {
   if (state.pendingAction?.type === "nope_window") {
-    return resolvePendingNopeWindow(state, state.pendingAction);
+    if (playerId !== state.pendingAction.resolverPlayerId) {
+      return { ok: false, code: "turn", message: "Ø§Ù„Ø§Ù† Ù†ÙˆØ¨Øª Ø§ÛŒÙ† Ø¨Ø§Ø²ÛŒÚ©Ù† Ø¨Ø±Ø§ÛŒ Ù¾Ø§Ø³Ø® Nope Ù†ÛŒØ³Øª" };
+    }
+    return advanceNopeWindow(state, state.pendingAction, playerId);
   }
 
   if (state.pendingAction?.type === "favor_response") {
