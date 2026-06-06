@@ -49,10 +49,10 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.use("/api/auth", createAuthRouter(userService));
   app.use("/api/avatars", createAvatarRouter());
   app.use("/api/feedback", createFeedbackRouter(feedbackService, userService));
+  app.use("/api/bale", createBaleRouter(baleService));
   app.use("/api", createUserRouter(userService, roomService));
   app.use("/api/games", createGameRouter());
   app.use("/api/rooms", createRoomRouter(roomService, userService));
-  app.use("/api/bale", createBaleRouter(baleService));
 
   app.use(express.static(appUiPath));
 

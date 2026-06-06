@@ -7,7 +7,7 @@ export function createBaleRouter(baleService: BaleService): Router {
   const router = Router();
   const controller = new BaleController(baleService);
 
-  router.post("/webhook/bale", asyncHandler(controller.create));
+  router.post("/webhook", asyncHandler(controller.create));
 
   return router;
 }
