@@ -14,16 +14,19 @@ import { createFeedbackRouter } from "./routes/feedbackRoutes.js";
 import { createGameRouter } from "./routes/gameRoutes.js";
 import { createRoomRouter } from "./routes/roomRoutes.js";
 import { createUserRouter } from "./routes/userRoutes.js";
+import { createBaleRouter } from "./routes/baleRoutes.js";
+import { BaleService } from "../../application/baleService.js";
 
 export type HttpAppDeps = {
   adminService: AdminService;
   feedbackService: FeedbackService;
   roomService: RoomService;
   userService: UserService;
+  baleService: BaleService;
 };
 
 export function createHttpApp(deps: HttpAppDeps) {
-  const { adminService, feedbackService, roomService, userService } = deps;
+  const { adminService, feedbackService, roomService, userService, baleService } = deps;
   const app = express();
   const appUiPath = path.resolve(process.cwd(), "appUI");
   const appUiIndexPath = path.join(appUiPath, "index.html");
@@ -49,6 +52,7 @@ export function createHttpApp(deps: HttpAppDeps) {
   app.use("/api", createUserRouter(userService, roomService));
   app.use("/api/games", createGameRouter());
   app.use("/api/rooms", createRoomRouter(roomService, userService));
+  app.use("/api/bale", createBaleRouter(baleService));
 
   app.use(express.static(appUiPath));
 

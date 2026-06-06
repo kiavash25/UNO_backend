@@ -3,6 +3,7 @@ import { AdminService } from "./application/adminService.js";
 import { GameAnalyticsService } from "./application/gameAnalyticsService.js";
 import { FeedbackService } from "./application/feedbackService.js";
 import { RoomService } from "./application/roomService.js";
+import { BaleService } from "./application/baleService.js";
 import { UserService } from "./application/userService.js";
 import { loadEnv } from "./config/env.js";
 import { createJwtService } from "./infrastructure/auth/jwt.js";
@@ -30,6 +31,7 @@ async function main() {
   const sessions = new SessionStore(redis, env.PLAYER_TOKEN_TTL_SEC);
   const analytics = new GameAnalyticsService(redis, gameReportRepo);
   const userRepo = new UserRepository();
+  const baleService = new BaleService();
 
   const hubRef: { hub?: WsHub } = {};
   const roomService = new RoomService(
@@ -73,7 +75,7 @@ async function main() {
     telegramBotToken: env.TELEGRAM_BOT_TOKEN,
   });
 
-  const app = createHttpApp({ adminService, feedbackService, roomService, userService });
+  const app = createHttpApp({ adminService, feedbackService, roomService, userService, baleService });
   const server = http.createServer(app);
   attachWsServer({ server, roomService, hub: hubRef.hub });
 

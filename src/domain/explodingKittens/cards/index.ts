@@ -8,7 +8,7 @@ import { EXPLODING_KITTENS_CARD_OVERRIDES } from "./config.js";
 import { defuseCardDefinition } from "./defuse.js";
 import { explodingKittenCardDefinition } from "./explodingKitten.js";
 import { favorCardDefinition } from "./favor.js";
-import { nopeCardDefinition } from "./nope.js";
+// import { nopeCardDefinition } from "./nope.js";
 import { seeFutureCardDefinition } from "./seeFuture.js";
 import { shuffleCardDefinition } from "./shuffle.js";
 import { skipCardDefinition } from "./skip.js";
@@ -23,7 +23,7 @@ const baseDefinitions: ExplodingKittensCardDefinition[] = [
   favorCardDefinition,
   shuffleCardDefinition,
   seeFutureCardDefinition,
-  nopeCardDefinition,
+//   nopeCardDefinition,
   defuseCardDefinition,
   explodingKittenCardDefinition,
 //   catTacoCardDefinition,

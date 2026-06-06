@@ -378,6 +378,9 @@ export class RoomService {
     const gameId = partial.gameId ?? "uno";
     const game = this.gameDefinition(gameId);
     const mode = partial.mode ?? "classic";
+    if (gameId === "exploding_kittens" && mode === "fast") {
+      throw new AppError("حالت سریع برای گربه‌های انفجاری فعال نیست", "bad_settings");
+    }
     return {
       gameId,
       name: partial.name,
@@ -547,7 +550,7 @@ export class RoomService {
       gameId,
       name: "بازی سریع",
       maxPlayers: 4,
-      mode: "fast",
+      mode: gameId === "exploding_kittens" ? "classic" : "fast",
       isPrivate: false,
     }, userId);
     return { ...created, created: true };

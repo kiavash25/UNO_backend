@@ -2,7 +2,7 @@ import type { CardGameRoomConfig } from "../cardGame/cardGame.js";
 
 export const explodingKittensRoomConfig: CardGameRoomConfig = {
   turnTimeoutMs: {
-    classic: 15_000,
+    classic: 15_000_000,
     fast: 5_000,
   },
   fastMatchDurationMs: 60_000,
