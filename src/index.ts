@@ -8,6 +8,7 @@ import { UserService } from "./application/userService.js";
 import { loadEnv } from "./config/env.js";
 import { createJwtService } from "./infrastructure/auth/jwt.js";
 import { AdminRepository } from "./infrastructure/mongo/adminRepository.js";
+import { BaleLogRepository } from "./infrastructure/mongo/baleLogRepository.js";
 import { connectMongo, disconnectMongo } from "./infrastructure/mongo/connection.js";
 import { FeedbackRepository } from "./infrastructure/mongo/feedbackRepository.js";
 import { GameReportRepository } from "./infrastructure/mongo/gameReportRepository.js";
@@ -31,7 +32,8 @@ async function main() {
   const sessions = new SessionStore(redis, env.PLAYER_TOKEN_TTL_SEC);
   const analytics = new GameAnalyticsService(redis, gameReportRepo);
   const userRepo = new UserRepository();
-  const baleService = new BaleService();
+  const baleLogRepo = new BaleLogRepository();
+  const baleService = new BaleService(baleLogRepo, userRepo);
 
   const hubRef: { hub?: WsHub } = {};
   const roomService = new RoomService(
