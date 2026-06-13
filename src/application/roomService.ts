@@ -265,7 +265,7 @@ export class RoomService {
 
     const beforeGame = this.cloneGameState(state.game);
     const startedAtMs = expectedDeadline - this.getTurnTimeoutMs(state);
-    const result = game.handleTurnTimeout(state.game, playerId);
+    const result = game.handleTurnTimeout(state.game, playerId, { settings: state.settings });
     if (!result.ok) return;
     const endedAtMs = Date.now();
 

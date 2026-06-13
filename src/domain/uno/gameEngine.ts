@@ -379,14 +379,18 @@ export function passAfterDraw(state: UnoGameState, playerId: PlayerId): PlayResu
   return { ok: true, state };
 }
 
-export function applyTurnTimeout(state: UnoGameState, playerId: PlayerId): PlayResult {
+export function applyTurnTimeout(
+  state: UnoGameState,
+  playerId: PlayerId,
+  opts: { eliminateAfterRepeatedTimeouts?: boolean } = {},
+): PlayResult {
   if (state.status !== "playing") return { ok: false, code: "finished", message: "بازی تمام شده است" };
   if (currentPlayerId(state) !== playerId) return { ok: false, code: "turn", message: "نوبت شما نیست" };
 
   if (!state.turnTimeoutCounts) state.turnTimeoutCounts = {};
   const nextTimeoutCount = (state.turnTimeoutCounts[playerId] ?? 0) + 1;
   state.turnTimeoutCounts[playerId] = nextTimeoutCount;
-  if (nextTimeoutCount >= 2) {
+  if (opts.eliminateAfterRepeatedTimeouts !== false && nextTimeoutCount >= 2) {
     return removePlayerFromGame(state, playerId);
   }
 

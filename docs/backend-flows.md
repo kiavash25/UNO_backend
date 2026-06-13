@@ -781,9 +781,10 @@ applyTurnTimeout
 
 - فقط active player timeout می شود.
 - `turnTimeoutCounts[playerId]++`
-- اگر count به 2 برسد:
+- در حالت `classic` اگر count به 2 برسد:
   - `removePlayerFromGame` اجرا می شود.
   - اگر یک بازیکن باقی بماند، بازی تمام می شود.
+- در حالت `fast` بازیکن با تکرار timeout حذف نمی شود و هر بار جریمه عادی timeout را می گیرد.
 - اگر هنوز حذف نشده:
   - اگر draw stack روی بازیکن باشد، مقدار stack به penalty اضافه می شود.
   - یک کارت اضافه هم جریمه می گیرد.

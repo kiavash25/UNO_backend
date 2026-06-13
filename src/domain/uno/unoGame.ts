@@ -147,9 +147,11 @@ export const unoGameDefinition: CardGameDefinition<UnoGameState> = {
     return { ok: true, events };
   },
 
-  handleTurnTimeout(state, playerId) {
+  handleTurnTimeout(state, playerId, context) {
     const player = state.players.find((p) => p.id === playerId);
-    const result = applyTurnTimeout(state, playerId);
+    const result = applyTurnTimeout(state, playerId, {
+      eliminateAfterRepeatedTimeouts: context.settings.mode === "classic",
+    });
     if (!result.ok) return result;
     const stillPlaying = !state.eliminatedPlayerIds?.[playerId];
     return {

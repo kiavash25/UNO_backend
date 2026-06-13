@@ -56,6 +56,10 @@ export type BotTurnContext = {
   lobbyPlayers: LobbyPlayer[];
 };
 
+export type TurnTimeoutContext = {
+  settings: RoomSettings;
+};
+
 export type CardGameDefinition<TState = unknown> = {
   id: string;
   displayName: string;
@@ -66,7 +70,7 @@ export type CardGameDefinition<TState = unknown> = {
   createInitialState(roster: GameRosterPlayer[]): TState;
   projectStateForPlayer(state: TState, viewerId: string): unknown;
   applyAction(state: TState, playerId: string, action: CardGameAction): CardGameActionResult;
-  handleTurnTimeout?(state: TState, playerId: string): CardGameActionResult;
+  handleTurnTimeout?(state: TState, playerId: string, context: TurnTimeoutContext): CardGameActionResult;
   finishTimedMatch?(state: TState): CardGameActionResult;
   removePlayer?(state: TState, playerId: string): CardGameActionResult;
   getPlayerResult?(state: TState, playerId: string): { eligible: boolean; won: boolean };
