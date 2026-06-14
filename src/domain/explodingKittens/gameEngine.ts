@@ -206,16 +206,13 @@ function handleDrawAction(state: ExplodingKittensGameState, playerId: string): C
   if (card.type === "exploding_kitten") {
     const defuseCard = findDefuseCard(state, playerId);
     if (defuseCard) {
-      const consumedDefuse = removeCardFromHand(state, playerId, defuseCard.id);
-      if (consumedDefuse) {
-        discardCards(state, [consumedDefuse]);
-      }
-
       const remainingTurnsAfterDefuse = Math.max(0, state.remainingTurns - 1);
       state.pendingAction = {
         type: "defuse",
+        stage: "awaiting_defuse",
         playerId,
         resolverPlayerId: playerId,
+        defuseCardId: defuseCard.id,
         explodingKittenCard: card,
         remainingTurnsAfterDefuse,
       };
@@ -547,11 +544,46 @@ function handleDefuseAction(
   if (playerId !== pending.playerId) {
     return { ok: false, code: "turn", message: "فقط بازیکنی که منفجر شده باید Defuse را انجام دهد" };
   }
+  if (action.type === "confirmDefuse") {
+    if (pending.stage !== "awaiting_defuse") {
+      return { ok: false, code: "pending", message: "Defuse has already been consumed" };
+    }
+
+    const consumedDefuse = removeCardFromHand(state, playerId, pending.defuseCardId);
+    if (!consumedDefuse || consumedDefuse.type !== "defuse") {
+      return { ok: false, code: "card", message: "Defuse card was not found in the player's hand" };
+    }
+
+    discardCards(state, [consumedDefuse]);
+    pending.stage = "awaiting_insert";
+    syncPlayers(state);
+    return {
+      ok: true,
+      events: [
+        makeEvent("exploding_kittens.defuseConsumed", {
+          playerId,
+          cardId: consumedDefuse.id,
+        }),
+      ],
+    };
+  }
+
   if (action.type !== "defuse") {
     return { ok: false, code: "action", message: "برای ادامه باید جای قرار گرفتن Exploding Kitten مشخص شود" };
   }
 
-  insertCardIntoDrawPile(state, pending.explodingKittenCard, action.insertIndex);
+  if (pending.stage !== "awaiting_insert") {
+    return { ok: false, code: "pending", message: "Confirm Defuse before choosing the bomb position" };
+  }
+  if (
+    !Number.isInteger(action.insertIndex) ||
+    action.insertIndex! < 0 ||
+    action.insertIndex! > state.drawPile.length
+  ) {
+    return { ok: false, code: "index", message: "Bomb insertion index is invalid" };
+  }
+
+  insertCardIntoDrawPile(state, pending.explodingKittenCard, action.insertIndex!);
   state.pendingAction = null;
 
   if (pending.remainingTurnsAfterDefuse > 0) {
@@ -567,6 +599,7 @@ function handleDefuseAction(
     events: [
       makeEvent("exploding_kittens.defuseResolved", {
         playerId,
+        insertIndex: action.insertIndex,
         remainingTurns: state.remainingTurns,
       }),
     ],
@@ -692,10 +725,21 @@ export function handleExplodingKittensTurnTimeout(
   }
 
   if (state.pendingAction?.type === "defuse") {
-    return handleDefuseAction(state, playerId, {
+    const consumed =
+      state.pendingAction.stage === "awaiting_defuse"
+        ? handleDefuseAction(state, playerId, { type: "confirmDefuse" })
+        : ({ ok: true, events: [] } as const);
+    if (!consumed.ok) return consumed;
+
+    const resolved = handleDefuseAction(state, playerId, {
       type: "defuse",
       insertIndex: Math.floor(Math.random() * (state.drawPile.length + 1)),
     });
+    if (!resolved.ok) return resolved;
+    return {
+      ...resolved,
+      events: [...(consumed.events ?? []), ...(resolved.events ?? [])],
+    };
   }
 
   return handleDrawAction(state, playerId);

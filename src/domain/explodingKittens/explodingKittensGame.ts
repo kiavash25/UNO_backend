@@ -32,7 +32,7 @@ function isExplodingKittensAction(action: CardGameAction): action is ExplodingKi
     return true;
   }
   if (action.type === "resolveNope") return true;
-  return action.type === "defuse";
+  return action.type === "confirmDefuse" || action.type === "defuse";
 }
 
 function botTarget(state: ExplodingKittensGameState, playerId: string): string | undefined {
@@ -70,6 +70,9 @@ function chooseExplodingKittensBotAction(
   }
 
   if (pending?.type === "defuse" && pending.playerId === playerId) {
+    if (pending.stage === "awaiting_defuse") {
+      return { type: "confirmDefuse" };
+    }
     return {
       type: "defuse",
       insertIndex: Math.floor(Math.random() * (state.drawPile.length + 1)),

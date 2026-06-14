@@ -23,6 +23,7 @@ export type ExplodingKittensAction =
     }
   | { type: "giveFavorCard"; cardId: string }
   | { type: "resolveNope"; allow?: boolean }
+  | { type: "confirmDefuse" }
   | { type: "defuse"; insertIndex?: number };
 
 export type SingleCardEffect =
@@ -100,9 +101,10 @@ export type ExplodingKittensPendingAction =
     }
   | {
       type: "defuse";
+      stage: "awaiting_defuse" | "awaiting_insert";
       playerId: string;
       resolverPlayerId: string;
+      defuseCardId: string;
       explodingKittenCard: ExplodingKittensCard;
       remainingTurnsAfterDefuse: number;
     };
-
