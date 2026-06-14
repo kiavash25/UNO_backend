@@ -1,4 +1,5 @@
 import type { ExplodingKittensGameState, ExplodingKittensPlayerProjection } from "./gameState.js";
+import { SEE_FUTURE_VIEW_DURATION_MS } from "./roomConfig.js";
 
 export function projectExplodingKittensGameStateForPlayer(
   state: ExplodingKittensGameState,
@@ -18,5 +19,8 @@ export function projectExplodingKittensGameStateForPlayer(
     peekedCards: state.peekByPlayerId[viewerId] ?? [],
     pendingAction: state.pendingAction,
     enabledCardTypes: state.enabledCardTypes,
+    rules: {
+      seeFutureViewDurationMs: SEE_FUTURE_VIEW_DURATION_MS,
+    },
   };
 }

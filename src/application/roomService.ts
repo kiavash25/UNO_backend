@@ -168,9 +168,12 @@ export class RoomService {
     state.version += 1;
   }
 
-  private async persist(state: LiveRoomState, opts: { resetTurnTimer?: boolean } = {}): Promise<void> {
+  private async persist(
+    state: LiveRoomState,
+    opts: { resetTurnTimer?: boolean; turnTimerBonusMs?: number } = {},
+  ): Promise<void> {
     if (opts.resetTurnTimer || (state.phase === "playing" && !state.turnDeadlineAt)) {
-      this.resetTurnDeadline(state);
+      this.resetTurnDeadline(state, opts.turnTimerBonusMs);
     }
     if (state.phase === "playing" && state.settings.mode === "fast" && !state.matchDeadlineAt) {
       const durationMs = this.getMatchDurationMs(state);
@@ -187,10 +190,24 @@ export class RoomService {
     this.scheduleBotTurn(state.id);
   }
 
-  private resetTurnDeadline(state: LiveRoomState): void {
+  private resetTurnDeadline(state: LiveRoomState, bonusMs = 0): void {
     const game = state.game ? this.gameForRoom(state) : null;
     const activePlayerId = state.game && game ? game.getActivePlayerId(state.game) : null;
-    state.turnDeadlineAt = state.phase === "playing" && activePlayerId ? Date.now() + this.getTurnTimeoutMs(state) : null;
+    state.turnDeadlineAt =
+      state.phase === "playing" && activePlayerId
+        ? Date.now() + this.getTurnTimeoutMs(state) + Math.max(0, bonusMs)
+        : null;
+  }
+
+  private eventTurnTimeBonusMs(
+    game: CardGameDefinition,
+    events: CardGameEvent[] | undefined,
+  ): number {
+    if (!events?.length || !game.roomConfig.eventTurnTimeBonusMs) return 0;
+    return events.reduce(
+      (total, event) => total + (game.roomConfig.eventTurnTimeBonusMs?.[event.type] ?? 0),
+      0,
+    );
   }
 
   private gameDefinition(gameId: string): CardGameDefinition {
@@ -360,7 +377,10 @@ export class RoomService {
     this.handleGameEvents(state, result.events);
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
-    await this.persist(state, { resetTurnTimer: true });
+    await this.persist(state, {
+      resetTurnTimer: true,
+      turnTimerBonusMs: this.eventTurnTimeBonusMs(game, result.events),
+    });
     await this.applyBotRewardsIfFinished(state);
     this.trackGameAction({
       state,
@@ -773,7 +793,10 @@ export class RoomService {
     this.handleGameEvents(state, res.events);
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
-    await this.persist(state, { resetTurnTimer: true });
+    await this.persist(state, {
+      resetTurnTimer: true,
+      turnTimerBonusMs: this.eventTurnTimeBonusMs(game, res.events),
+    });
     await this.applyBotRewardsIfFinished(state);
     this.trackGameAction({
       state,

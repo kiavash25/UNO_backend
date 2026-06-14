@@ -24,6 +24,7 @@ export type GameModeValue<T> = {
 export type CardGameRoomConfig = {
   turnTimeoutMs: GameModeValue<number>;
   fastMatchDurationMs: number | null;
+  eventTurnTimeBonusMs?: Record<string, number>;
   botTurnDelayMs: {
     base: GameModeValue<number>;
     extra: GameModeValue<number>;

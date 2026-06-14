@@ -47,4 +47,7 @@ export type ExplodingKittensPlayerProjection = {
   peekedCards: ExplodingKittensCard[];
   pendingAction: ExplodingKittensPendingAction | null;
   enabledCardTypes: string[];
+  rules: {
+    seeFutureViewDurationMs: number;
+  };
 };
