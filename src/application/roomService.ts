@@ -4,6 +4,7 @@ import { getCardGame } from "../domain/cardGame/gameRegistry.js";
 import { RoomRepository } from "../infrastructure/mongo/roomRepository.js";
 import { UserRepository, type BotUser } from "../infrastructure/mongo/userRepository.js";
 import { LiveRoomStore } from "../infrastructure/redis/liveRoomStore.js";
+import { MatchmakingStore, type MatchmakingEntry } from "../infrastructure/redis/matchmakingStore.js";
 import { SessionStore } from "../infrastructure/redis/sessionStore.js";
 import { AppError } from "./errors.js";
 import type { GameAnalyticsService } from "./gameAnalyticsService.js";
@@ -29,6 +30,14 @@ export type JoinRoomResult = {
 };
 
 export type BotMatchResult = CreateRoomResult;
+
+const BOT_MATCH_WAIT_MS = 7_000;
+const BOT_MATCH_QUEUE_TTL_MS = 30_000;
+const BOT_MATCH_LOCK_TTL_MS = 10_000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export type ClaimedMatchResult = {
   won: boolean;
@@ -102,6 +111,7 @@ export class RoomService {
     private readonly users: UserRepository,
     private readonly live: LiveRoomStore,
     private readonly sessions: SessionStore,
+    private readonly matchmaking: MatchmakingStore,
     private readonly events: RoomEvents = {},
     private readonly analytics?: GameAnalyticsService,
   ) {}
@@ -576,6 +586,97 @@ export class RoomService {
     return { ...created, created: true };
   }
 
+  private async acquireMatchmakingLock(key: string): Promise<string> {
+    const token = `${Date.now()}:${Math.random()}`;
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline) {
+      if (await this.matchmaking.acquireLock(key, token, BOT_MATCH_LOCK_TTL_MS)) {
+        return token;
+      }
+      await delay(50);
+    }
+    throw new AppError("صف بازی شلوغ است؛ دوباره تلاش کن", "matchmaking_busy", 503);
+  }
+
+  private async fillWithBotsAndStart(
+    key: string,
+    entry: MatchmakingEntry,
+    totalPlayers: number,
+  ): Promise<void> {
+    try {
+      const state = await this.live.load(entry.roomId);
+      if (!state) throw new AppError("اتاق پیدا نشد", "not_found", 404);
+      if (state.phase !== "lobby") return;
+
+      const botsNeeded = totalPlayers - state.players.length;
+      if (botsNeeded > 0) {
+        const existing = new Set(state.players.map((player) => player.displayName));
+        const availableBots = (await this.users.listBots(200))
+          .filter((bot) => !existing.has(bot.displayName))
+          .sort(() => Math.random() - 0.5);
+        if (availableBots.length < botsNeeded) {
+          throw new AppError("تعداد کاربرفعال در دسترس کافی نیست", "insufficient_bots", 409);
+        }
+
+        for (const bot of availableBots.slice(0, botsNeeded)) {
+          const botId = newPlayerId();
+          let botDisplayName = bot.displayName;
+          while (existing.has(botDisplayName)) {
+            botDisplayName = `${bot.displayName}${Math.floor(10 + Math.random() * 90)}`;
+          }
+          existing.add(botDisplayName);
+          state.players.push({
+            id: botId,
+            displayName: botDisplayName,
+            avatar: bot.avatar,
+            profile: this.toBotPlayerProfile(bot, botDisplayName),
+            isHost: false,
+            isBot: true,
+            ready: true,
+            connected: true,
+          });
+        }
+        this.bump(state);
+        await this.persist(state);
+      }
+
+      await this.startGame(entry.hostPlayerToken);
+    } finally {
+      await this.matchmaking.remove(key);
+    }
+  }
+
+  private async waitForMatchedGame(
+    key: string,
+    entry: MatchmakingEntry,
+    totalPlayers: number,
+  ): Promise<void> {
+    const waitDeadline = entry.createdAt + BOT_MATCH_WAIT_MS;
+    const requestDeadline = waitDeadline + BOT_MATCH_LOCK_TTL_MS;
+
+    while (Date.now() < requestDeadline) {
+      const state = await this.live.load(entry.roomId);
+      if (!state) throw new AppError("اتاق پیدا نشد", "not_found", 404);
+      if (state.phase === "playing") return;
+
+      if (Date.now() >= waitDeadline) {
+        const lockToken = await this.acquireMatchmakingLock(key);
+        try {
+          const latest = await this.live.load(entry.roomId);
+          if (latest?.phase === "lobby") {
+            await this.fillWithBotsAndStart(key, entry, totalPlayers);
+          }
+        } finally {
+          await this.matchmaking.releaseLock(key, lockToken);
+        }
+      }
+
+      await delay(100);
+    }
+
+    throw new AppError("پیدا کردن بازی زمان زیادی برد؛ دوباره تلاش کن", "matchmaking_timeout", 504);
+  }
+
   async createBotMatch(
     displayName: string,
     totalPlayers: number,
@@ -590,50 +691,53 @@ export class RoomService {
       throw new AppError(`تعداد بازیکن باید بین ${game.minPlayers} تا ${Math.min(4, game.maxPlayers)} باشد`, "bad_settings");
     }
 
-    const created = await this.createRoom(displayName, avatar, {
-      gameId,
-      name: "بازی با دیگران",
-      maxPlayers: totalPlayers,
-      mode,
-      isPrivate: true,
-    }, userId);
+    const key = `${gameId}:${mode}:${totalPlayers}`;
+    const lockToken = await this.acquireMatchmakingLock(key);
+    let entry: MatchmakingEntry;
+    let session: BotMatchResult;
 
-    const state = await this.live.load(created.roomId);
-    if (!state) throw new AppError("اتاق پیدا نشد", "not_found", 404);
+    try {
+      let queued = await this.matchmaking.get(key);
+      let queuedState = queued ? await this.live.load(queued.roomId) : null;
 
-    const existing = new Set(state.players.map((p) => p.displayName));
-    const botsNeeded = totalPlayers - 1;
-    const availableBots = (await this.users.listBots(200))
-      .filter((bot) => !existing.has(bot.displayName))
-      .sort(() => Math.random() - 0.5);
-    if (availableBots.length < botsNeeded) {
-      throw new AppError("تعداد کاربرفعال در دسترس کافی نیست", "insufficient_bots", 409);
-    }
-
-    for (const bot of availableBots.slice(0, botsNeeded)) {
-      const botId = newPlayerId();
-      let botDisplayName = bot.displayName;
-      while (existing.has(botDisplayName)) {
-        botDisplayName = `${bot.displayName}${Math.floor(10 + Math.random() * 90)}`;
+      if (queued && queuedState?.phase === "lobby" && queuedState.players.length >= totalPlayers) {
+        await this.fillWithBotsAndStart(key, queued, totalPlayers);
+        queued = null;
+        queuedState = null;
       }
-      existing.add(botDisplayName);
-      const profile = this.toBotPlayerProfile(bot, botDisplayName);
-      state.players.push({
-        id: botId,
-        displayName: botDisplayName,
-        avatar: bot.avatar,
-        profile,
-        isHost: false,
-        isBot: true,
-        ready: true,
-        connected: true,
-      });
-    }
-    this.bump(state);
-    await this.persist(state);
-    await this.startGame(created.playerToken);
 
-    return created;
+      if (queued && queuedState?.phase === "lobby" && queuedState.players.length < totalPlayers) {
+        entry = queued;
+        session = await this.joinRoom(entry.code, displayName, avatar, userId);
+      } else {
+        if (queued) await this.matchmaking.remove(key);
+        const created = await this.createRoom(displayName, avatar, {
+          gameId,
+          name: "بازی با دیگران",
+          maxPlayers: totalPlayers,
+          mode,
+          isPrivate: true,
+        }, userId);
+        entry = {
+          roomId: created.roomId,
+          code: created.code,
+          hostPlayerToken: created.playerToken,
+          createdAt: Date.now(),
+        };
+        await this.matchmaking.save(key, entry, BOT_MATCH_QUEUE_TTL_MS);
+        session = created;
+      }
+
+      const state = await this.live.load(entry.roomId);
+      if (state && state.players.length >= totalPlayers) {
+        await this.fillWithBotsAndStart(key, entry, totalPlayers);
+      }
+    } finally {
+      await this.matchmaking.releaseLock(key, lockToken);
+    }
+
+    await this.waitForMatchedGame(key, entry, totalPlayers);
+    return session;
   }
 
   private toBotPlayerProfile(bot: BotUser, displayName: string): LobbyPlayer["profile"] {

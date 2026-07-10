@@ -5,6 +5,8 @@ export const redisKeys = {
   publicLobbyRooms: () => "cardhub:publicLobbyRooms",
   gameAnalyticsMeta: (roomId: string) => `cardhub:analytics:game:${roomId}:meta`,
   gameAnalyticsEvents: (roomId: string) => `cardhub:analytics:game:${roomId}:events`,
+  matchmakingQueue: (key: string) => `cardhub:matchmaking:${key}`,
+  matchmakingLock: (key: string) => `cardhub:matchmaking:${key}:lock`,
 };
 
 export const legacyUnoRedisKeys = {

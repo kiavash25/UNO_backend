@@ -15,6 +15,7 @@ import { GameReportRepository } from "./infrastructure/mongo/gameReportRepositor
 import { RoomRepository } from "./infrastructure/mongo/roomRepository.js";
 import { UserRepository } from "./infrastructure/mongo/userRepository.js";
 import { LiveRoomStore } from "./infrastructure/redis/liveRoomStore.js";
+import { MatchmakingStore } from "./infrastructure/redis/matchmakingStore.js";
 import { createRedis } from "./infrastructure/redis/redisClient.js";
 import { SessionStore } from "./infrastructure/redis/sessionStore.js";
 import { createHttpApp } from "./interfaces/http/createHttpApp.js";
@@ -29,6 +30,7 @@ async function main() {
   const roomRepo = new RoomRepository();
   const gameReportRepo = new GameReportRepository();
   const live = new LiveRoomStore(redis);
+  const matchmaking = new MatchmakingStore(redis);
   const sessions = new SessionStore(redis, env.PLAYER_TOKEN_TTL_SEC);
   const analytics = new GameAnalyticsService(redis, gameReportRepo);
   const userRepo = new UserRepository();
@@ -41,6 +43,7 @@ async function main() {
     userRepo,
     live,
     sessions,
+    matchmaking,
     {
       onRoomChanged: (roomId) => hubRef.hub?.pushRoom(roomId),
       onGameEvent: (roomId, event) => {
