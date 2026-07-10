@@ -588,7 +588,7 @@ function handleDefuseAction(
 
   if (pending.remainingTurnsAfterDefuse > 0) {
     state.remainingTurns = pending.remainingTurnsAfterDefuse;
-    state.pendingAttackStacks = Math.max(0, state.remainingTurns - 1);
+    state.pendingAttackStacks = state.remainingTurns;
   } else {
     advanceTurn(state, 1);
   }

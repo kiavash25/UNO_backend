@@ -26,7 +26,9 @@ export const attackCardDefinition: ExplodingKittensCardDefinition = {
       return { ok: false, code: "effect", message: "اثر کارت حمله نامعتبر است" };
     }
 
-    const nextTurns = Math.max(2, state.remainingTurns + 1);
+    // A regular Attack gives the next player two turns. A counter-Attack
+    // carries the outstanding turns forward and adds two more (2 -> 4 -> 6).
+    const nextTurns = state.pendingAttackStacks > 0 ? state.remainingTurns + 2 : 2;
     const targetPlayerId = advanceTurn(state, nextTurns);
     return {
       ok: true,
@@ -40,4 +42,3 @@ export const attackCardDefinition: ExplodingKittensCardDefinition = {
     };
   },
 };
-

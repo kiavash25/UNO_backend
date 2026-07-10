@@ -72,7 +72,7 @@ export function advanceTurn(state: ExplodingKittensGameState, turns = 1): string
 
   state.turnIndex = nextIndex;
   state.remainingTurns = Math.max(1, turns);
-  state.pendingAttackStacks = Math.max(0, state.remainingTurns - 1);
+  state.pendingAttackStacks = state.remainingTurns > 1 ? state.remainingTurns : 0;
   clearPeekState(state);
   return currentPlayerId(state);
 }
@@ -80,7 +80,7 @@ export function advanceTurn(state: ExplodingKittensGameState, turns = 1): string
 export function consumeCurrentTurn(state: ExplodingKittensGameState): string | null {
   if (state.remainingTurns > 1) {
     state.remainingTurns -= 1;
-    state.pendingAttackStacks = Math.max(0, state.remainingTurns - 1);
+    state.pendingAttackStacks = state.remainingTurns;
     clearPeekState(state);
     return currentPlayerId(state);
   }
@@ -254,4 +254,3 @@ export function pickTimedWinner(state: ExplodingKittensGameState): string | null
 export function makeEvent(type: string, payload?: Record<string, unknown>): CardGameEvent {
   return { type, payload };
 }
-
