@@ -13,11 +13,11 @@ export const explodingKittensRoomConfig: CardGameRoomConfig = {
   },
   botTurnDelayMs: {
     base: {
-      classic: 900,
-      fast: 400,
+      classic: 2_000,
+      fast: 2_000,
     },
     extra: {
-      classic: 1_800,
+      classic: 1_000,
       fast: 1_000,
     },
   },

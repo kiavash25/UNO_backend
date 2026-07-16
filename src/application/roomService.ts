@@ -190,7 +190,7 @@ export class RoomService {
     this.events.onRoomChanged?.(state.id);
     this.scheduleTurnTimeout(state.id);
     this.scheduleMatchTimeout(state.id);
-    this.scheduleBotTurn(state.id);
+    this.scheduleBotTurn(state.id, opts.turnTimerBonusMs ?? 0);
   }
 
   private resetTurnDeadline(state: LiveRoomState, bonusMs = 0): void {
@@ -330,7 +330,7 @@ export class RoomService {
     this.trackAnalytics(this.analytics?.finishGame(state, buildMatchRewards(state)) ?? Promise.resolve());
   }
 
-  private scheduleBotTurn(roomId: string): void {
+  private scheduleBotTurn(roomId: string, minimumDelayMs = 0): void {
     this.clearBotTimer(roomId);
     void (async () => {
       const state = await this.live.load(roomId);
@@ -344,7 +344,8 @@ export class RoomService {
       const { botTurnDelayMs } = game.roomConfig;
       const base = botTurnDelayMs.base[state.settings.mode];
       const extra = botTurnDelayMs.extra[state.settings.mode];
-      const delayMs = base + Math.floor(Math.random() * extra);
+      const humanLikeDelayMs = base + Math.floor(Math.random() * extra);
+      const delayMs = Math.max(humanLikeDelayMs, minimumDelayMs);
       const lockedVersion = state.version;
 
       const timer = setTimeout(() => {
