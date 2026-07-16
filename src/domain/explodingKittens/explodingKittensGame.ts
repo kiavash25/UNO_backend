@@ -43,6 +43,55 @@ function cardOfType(hand: ExplodingKittensCard[], type: string): ExplodingKitten
   return hand.find((card) => card.type === type) ?? null;
 }
 
+function cardCount(hand: ExplodingKittensCard[], type: string): number {
+  return hand.reduce((count, card) => count + (card.type === type ? 1 : 0), 0);
+}
+
+function chooseFavorResponseCard(hand: ExplodingKittensCard[]): ExplodingKittensCard | null {
+  const values: Record<string, number> = {
+    favor: 25,
+    see_future: 45,
+    skip: 65,
+    attack: 75,
+    shuffle: 80,
+    defuse: 100,
+  };
+
+  return [...hand].sort((left, right) => {
+    const leftValue = (values[left.type] ?? 10) - Math.max(0, cardCount(hand, left.type) - 1) * 8;
+    const rightValue = (values[right.type] ?? 10) - Math.max(0, cardCount(hand, right.type) - 1) * 8;
+    return leftValue - rightValue;
+  })[0] ?? null;
+}
+
+function chooseBombInsertIndex(state: ExplodingKittensGameState): number {
+  const pending = state.pendingAction;
+  if (pending?.type !== "defuse") return 0;
+
+  const deckSize = state.drawPile.length;
+  if (pending.remainingTurnsAfterDefuse > 0) {
+    const safeDepth = Math.min(deckSize, pending.remainingTurnsAfterDefuse + 1);
+    return safeDepth + Math.floor(Math.random() * (deckSize - safeDepth + 1));
+  }
+
+  if (deckSize === 0) return 0;
+  const roll = Math.random();
+  if (roll < 0.65) return 0;
+  if (roll < 0.9) return Math.min(1, deckSize);
+  return Math.floor(Math.random() * (deckSize + 1));
+}
+
+function nextAlivePlayer(state: ExplodingKittensGameState, playerId: string) {
+  const startIndex = state.players.findIndex((player) => player.id === playerId);
+  if (startIndex < 0) return null;
+
+  for (let offset = 1; offset < state.players.length; offset += 1) {
+    const player = state.players[(startIndex + offset) % state.players.length];
+    if (player?.alive) return player;
+  }
+  return null;
+}
+
 function playCard(card: ExplodingKittensCard): CardGameAction {
   return { type: "play", cardId: card.id };
 }
@@ -64,7 +113,7 @@ function chooseExplodingKittensBotAction(
   const pending = state.pendingAction;
   if (pending?.type === "favor_response" && pending.targetPlayerId === playerId) {
     const hand = state.hands[playerId] ?? [];
-    const card = hand.find((entry) => entry.type !== "defuse" && entry.type !== "nope") ?? hand[0];
+    const card = chooseFavorResponseCard(hand);
     return card ? { type: "giveFavorCard", cardId: card.id } : null;
   }
 
@@ -74,7 +123,7 @@ function chooseExplodingKittensBotAction(
     }
     return {
       type: "defuse",
-      insertIndex: Math.floor(Math.random() * (state.drawPile.length + 1)),
+      insertIndex: chooseBombInsertIndex(state),
     };
   }
 
@@ -95,14 +144,18 @@ function chooseExplodingKittensBotAction(
   const shuffle = cardOfType(hand, "shuffle");
   const seeFuture = cardOfType(hand, "see_future");
   const favor = cardOfType(hand, "favor");
+  const hasDefuse = Boolean(cardOfType(hand, "defuse"));
+  const nextPlayer = nextAlivePlayer(state, playerId);
+  const nextPlayerHandSize = nextPlayer ? state.hands[nextPlayer.id]?.length ?? 0 : 0;
 
   // A known safe card should be drawn instead of wasting more utility cards.
   if (knownTopCard && !topIsBomb) return { type: "draw" };
 
   if (topIsBomb) {
+    if (attack) return playCard(attack);
+    if (state.remainingTurns === 1 && skip) return playCard(skip);
     if (shuffle && !playedThisTurn.has("shuffle")) return playCard(shuffle);
     if (skip) return playCard(skip);
-    if (attack) return playCard(attack);
     return { type: "draw" };
   }
 
@@ -114,19 +167,28 @@ function chooseExplodingKittensBotAction(
   const bombRisk = estimatedBombRisk(state);
   const aliveCount = state.players.filter((player) => player.alive).length;
   const smallDeck = state.drawPile.length <= Math.max(5, aliveCount * 2);
+  const informationThreshold = hasDefuse ? 0.22 : 0.1;
+  const defensiveThreshold = hasDefuse ? 0.34 : 0.18;
 
-  if (seeFuture && !playedThisTurn.has("see_future") && (smallDeck || bombRisk >= 0.14)) {
+  if (seeFuture && !playedThisTurn.has("see_future") && (smallDeck || bombRisk >= informationThreshold)) {
     return playCard(seeFuture);
   }
 
-  if (bombRisk >= 0.3) {
+  if (bombRisk >= defensiveThreshold) {
     if (attack) return playCard(attack);
     if (skip) return playCard(skip);
+    if (shuffle && !playedThisTurn.has("shuffle")) return playCard(shuffle);
   }
 
-  if (favor && !playedThisTurn.has("favor") && hand.length <= 3 && Math.random() < 0.35) {
+  const vulnerableNextPlayer = nextPlayerHandSize > 0 && nextPlayerHandSize <= 3;
+  if (attack && vulnerableNextPlayer && (smallDeck || bombRisk >= 0.12)) {
+    return playCard(attack);
+  }
+
+  if (favor && !playedThisTurn.has("favor") && bombRisk < defensiveThreshold) {
     const targetPlayerId = botTarget(state, playerId);
-    if (targetPlayerId) {
+    const targetHandSize = targetPlayerId ? state.hands[targetPlayerId]?.length ?? 0 : 0;
+    if (targetPlayerId && targetHandSize >= Math.max(4, hand.length)) {
       return { type: "play", cardId: favor.id, targetPlayerId };
     }
   }

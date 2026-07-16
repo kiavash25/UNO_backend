@@ -82,7 +82,8 @@ export function consumeCurrentTurn(state: ExplodingKittensGameState): string | n
   if (state.remainingTurns > 1) {
     state.remainingTurns -= 1;
     state.pendingAttackStacks = state.remainingTurns;
-    state.playedCardTypesThisTurn = {};
+    // Keep utility-card history across the whole chained Attack sequence so
+    // bots do not repeat Shuffle, See the Future, or Favor before yielding.
     clearPeekState(state);
     return currentPlayerId(state);
   }
