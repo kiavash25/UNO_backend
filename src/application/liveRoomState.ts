@@ -8,6 +8,7 @@ export type LiveRoomState = {
   players: LobbyPlayer[];
   phase: RoomPhase;
   game: unknown | null;
+  userIdsByPlayerId?: Record<string, string>;
   turnDeadlineAt: number | null;
   matchDeadlineAt: number | null;
   matchRewardsClaimed?: Record<string, boolean>;

@@ -22,9 +22,11 @@ export type ExplodingKittensGameState = {
   hands: Record<string, ExplodingKittensCard[]>;
   winnerId: string | null;
   eliminatedPlayerIds: Record<string, boolean>;
+  eliminationOrder?: string[];
   pendingAttackStacks: number;
   pendingAction: ExplodingKittensPendingAction | null;
   peekByPlayerId: Record<string, ExplodingKittensCard[]>;
+  playedCardTypesThisTurn?: Record<string, string[]>;
   enabledCardTypes: string[];
   lastAction?: {
     type: string;

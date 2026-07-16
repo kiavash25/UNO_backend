@@ -12,8 +12,6 @@ import { projectExplodingKittensGameStateForPlayer } from "./projection.js";
 import { explodingKittensRoomConfig } from "./roomConfig.js";
 import type { ExplodingKittensAction } from "./types.js";
 
-const botPlayableCardTypes = new Set(["attack", "skip", "shuffle", "see_future", "favor"]);
-
 function isExplodingKittensAction(action: CardGameAction): action is ExplodingKittensAction {
   if (action.type === "draw") return true;
   if ((action.type === "play" || action.type === "playCard") && typeof action.cardId === "string") return true;
@@ -41,20 +39,21 @@ function botTarget(state: ExplodingKittensGameState, playerId: string): string |
   return targets[0]?.id;
 }
 
-function pickBotCard(hand: ExplodingKittensCard[]): ExplodingKittensCard | null {
-  const playable = hand.filter((card) => botPlayableCardTypes.has(card.type));
-  if (!playable.length) return null;
-  playable.sort((left, right) => {
-    const score = (card: ExplodingKittensCard) =>
-      card.type === "attack" ? 5 :
-      card.type === "skip" ? 4 :
-      card.type === "favor" ? 3 :
-      card.type === "shuffle" ? 2 :
-      card.type === "see_future" ? 1 :
-      0;
-    return score(right) - score(left);
-  });
-  return playable[0] ?? null;
+function cardOfType(hand: ExplodingKittensCard[], type: string): ExplodingKittensCard | null {
+  return hand.find((card) => card.type === type) ?? null;
+}
+
+function playCard(card: ExplodingKittensCard): CardGameAction {
+  return { type: "play", cardId: card.id };
+}
+
+function estimatedBombRisk(state: ExplodingKittensGameState): number {
+  if (!state.drawPile.length) return 0;
+  const bombs = state.drawPile.reduce(
+    (count, card) => count + (card.type === "exploding_kitten" ? 1 : 0),
+    0,
+  );
+  return bombs / state.drawPile.length;
 }
 
 function chooseExplodingKittensBotAction(
@@ -87,16 +86,52 @@ function chooseExplodingKittensBotAction(
   if (!active || active.id !== playerId) return null;
 
   const hand = state.hands[playerId] ?? [];
-  const picked = pickBotCard(hand);
-  if (!picked) return { type: "draw" };
+  const playedThisTurn = new Set(state.playedCardTypesThisTurn?.[playerId] ?? []);
+  const peekedCards = state.peekByPlayerId[playerId] ?? [];
+  const knownTopCard = peekedCards[0];
+  const topIsBomb = knownTopCard?.type === "exploding_kitten";
+  const attack = cardOfType(hand, "attack");
+  const skip = cardOfType(hand, "skip");
+  const shuffle = cardOfType(hand, "shuffle");
+  const seeFuture = cardOfType(hand, "see_future");
+  const favor = cardOfType(hand, "favor");
 
-  if (picked.type === "favor") {
-    const targetPlayerId = botTarget(state, playerId);
-    if (!targetPlayerId) return { type: "draw" };
-    return { type: "play", cardId: picked.id, targetPlayerId };
+  // A known safe card should be drawn instead of wasting more utility cards.
+  if (knownTopCard && !topIsBomb) return { type: "draw" };
+
+  if (topIsBomb) {
+    if (shuffle && !playedThisTurn.has("shuffle")) return playCard(shuffle);
+    if (skip) return playCard(skip);
+    if (attack) return playCard(attack);
+    return { type: "draw" };
   }
 
-  return { type: "play", cardId: picked.id };
+  if (state.remainingTurns > 1) {
+    if (attack) return playCard(attack);
+    if (skip) return playCard(skip);
+  }
+
+  const bombRisk = estimatedBombRisk(state);
+  const aliveCount = state.players.filter((player) => player.alive).length;
+  const smallDeck = state.drawPile.length <= Math.max(5, aliveCount * 2);
+
+  if (seeFuture && !playedThisTurn.has("see_future") && (smallDeck || bombRisk >= 0.14)) {
+    return playCard(seeFuture);
+  }
+
+  if (bombRisk >= 0.3) {
+    if (attack) return playCard(attack);
+    if (skip) return playCard(skip);
+  }
+
+  if (favor && !playedThisTurn.has("favor") && hand.length <= 3 && Math.random() < 0.35) {
+    const targetPlayerId = botTarget(state, playerId);
+    if (targetPlayerId) {
+      return { type: "play", cardId: favor.id, targetPlayerId };
+    }
+  }
+
+  return { type: "draw" };
 }
 
 function getExplodingKittensRanking(state: ExplodingKittensGameState): string[] {
@@ -108,9 +143,14 @@ function getExplodingKittensRanking(state: ExplodingKittensGameState): string[] 
       return left.displayName.localeCompare(right.displayName, "fa");
     });
   const winner = activePlayers.find((player) => player.id === state.winnerId);
-  const eliminatedPlayers = state.players
-    .filter((player) => state.eliminatedPlayerIds[player.id])
+  const recordedEliminations = state.eliminationOrder?.filter(
+    (playerId) => state.eliminatedPlayerIds[playerId],
+  ) ?? [];
+  const recordedIds = new Set(recordedEliminations);
+  const legacyEliminations = state.players
+    .filter((player) => state.eliminatedPlayerIds[player.id] && !recordedIds.has(player.id))
     .map((player) => player.id);
+  const eliminatedPlayers = [...recordedEliminations].reverse().concat(legacyEliminations);
   return [
     ...(winner ? [winner.id] : []),
     ...activePlayers.filter((player) => player.id !== state.winnerId).map((player) => player.id),
@@ -205,7 +245,7 @@ export const explodingKittensGameDefinition: CardGameDefinition<ExplodingKittens
 
   getPlayerResult(state, playerId) {
     const player = state.players.find((entry) => entry.id === playerId);
-    const eligible = state.status === "finished" && !!player && player.alive;
+    const eligible = !!player && (state.status === "finished" || player.alive === false);
     return { eligible, won: eligible && state.winnerId === playerId };
   },
 

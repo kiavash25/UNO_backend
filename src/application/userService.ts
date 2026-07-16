@@ -5,7 +5,6 @@ import { verifyBaleInitData, verifyTelegramInitData } from "../infrastructure/au
 import type { UserDoc, UserGameStats } from "../infrastructure/mongo/models/userModel.js";
 import { UserRepository } from "../infrastructure/mongo/userRepository.js";
 import { AppError } from "./errors.js";
-import { buildMatchRewardPatch } from "./matchRewardProgress.js";
 import { getEffectiveDailyWinStreak } from "./dailyStreak.js";
 import {
   isAllowedAvatar,
@@ -326,15 +325,6 @@ export class UserService {
     const passwordHash = await bcrypt.hash(nextPassword, this.bcryptCost);
     const updated = await this.users.updateById(userId, { passwordHash });
     if (!updated) throw new AppError("تغییر رمز عبور ناموفق بود", "update_failed", 500);
-  }
-
-  async recordMatch(userId: string, result: MatchRewardContext): Promise<PublicProfile> {
-    const u = await this.users.findById(userId);
-    if (!u) throw new AppError("کاربر پیدا نشد", "not_found", 404);
-
-    const next = await this.users.updateById(userId, buildMatchRewardPatch(u, result));
-    if (!next) throw new AppError("به‌روزرسانی ناموفق", "update_failed", 500);
-    return this.toPublic(next);
   }
 
   async getLeaderboard(scope: LeaderboardScope, limit: number): Promise<Leaderboard> {

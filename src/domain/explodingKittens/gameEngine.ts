@@ -339,6 +339,9 @@ function handlePlayAction(
     return { ok: false, code: "card", message: "امکان حذف کارت از دست بازیکن نبود" };
   }
   discardCards(state, [removedCard]);
+  state.playedCardTypesThisTurn ??= {};
+  state.playedCardTypesThisTurn[playerId] ??= [];
+  state.playedCardTypesThisTurn[playerId]!.push(removedCard.type);
 
   if (result.pendingEffect) {
     if (definition.canBeNoped) {
@@ -632,9 +635,11 @@ export function createExplodingKittensInitialState(roster: GameRosterPlayer[]): 
     hands: setup.hands,
     winnerId: null,
     eliminatedPlayerIds: {},
+    eliminationOrder: [],
     pendingAttackStacks: 0,
     pendingAction: null,
     peekByPlayerId: {},
+    playedCardTypesThisTurn: {},
     enabledCardTypes: setup.enabledCardTypes,
   };
 }

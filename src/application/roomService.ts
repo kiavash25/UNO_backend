@@ -39,14 +39,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export type ClaimedMatchResult = {
-  won: boolean;
-  gameId: string;
-  rank: number;
-  totalPlayers: number;
-  isPrivate: boolean;
-};
-
 export type PublicRoomSummary = {
   code: string;
   gameId: string;
@@ -105,6 +97,7 @@ export class RoomService {
   private readonly botTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly matchTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly rewardSettlements = new Map<string, Promise<void>>();
 
   constructor(
     private readonly rooms: RoomRepository,
@@ -300,7 +293,7 @@ export class RoomService {
     if (game.isFinished(state.game)) state.phase = "finished";
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
-    await this.applyBotRewardsIfFinished(state);
+    await this.settleEligibleRewards(state.id);
     this.trackGameAction({
       state,
       playerId,
@@ -333,7 +326,7 @@ export class RoomService {
     state.phase = "finished";
     this.bump(state);
     await this.persist(state);
-    await this.applyBotRewardsIfFinished(state);
+    await this.settleEligibleRewards(state.id);
     this.trackAnalytics(this.analytics?.finishGame(state, buildMatchRewards(state)) ?? Promise.resolve());
   }
 
@@ -391,7 +384,7 @@ export class RoomService {
       resetTurnTimer: true,
       turnTimerBonusMs: this.eventTurnTimeBonusMs(game, result.events),
     });
-    await this.applyBotRewardsIfFinished(state);
+    await this.settleEligibleRewards(state.id);
     this.trackGameAction({
       state,
       playerId: botId,
@@ -464,6 +457,7 @@ export class RoomService {
       players: [host],
       phase: "lobby",
       game: null,
+      userIdsByPlayerId: userId ? { [hostId]: userId } : {},
       turnDeadlineAt: null,
       matchDeadlineAt: null,
       matchRewardsClaimed: {},
@@ -505,6 +499,10 @@ export class RoomService {
     };
 
     state.players.push(player);
+    if (userId) {
+      state.userIdsByPlayerId ??= {};
+      state.userIdsByPlayerId[playerId] = userId;
+    }
     this.bump(state);
     const playerToken = newPlayerToken();
     await this.persist(state);
@@ -832,7 +830,7 @@ export class RoomService {
     }
     this.bump(state);
     await this.persist(state, { resetTurnTimer: true });
-    await this.applyBotRewardsIfFinished(state);
+    await this.settleEligibleRewards(state.id);
     if (state.phase === "finished") {
       this.trackAnalytics(this.analytics?.finishGame(state, buildMatchRewards(state)) ?? Promise.resolve());
     }
@@ -901,7 +899,7 @@ export class RoomService {
       resetTurnTimer: true,
       turnTimerBonusMs: this.eventTurnTimeBonusMs(game, res.events),
     });
-    await this.applyBotRewardsIfFinished(state);
+    await this.settleEligibleRewards(state.id);
     this.trackGameAction({
       state,
       playerId: sess.playerId,
@@ -914,44 +912,20 @@ export class RoomService {
     });
   }
 
-  async claimMatchResult(token: string, userId: string): Promise<ClaimedMatchResult> {
-    const sess = await this.sessions.get(token);
-    if (!sess) throw new AppError("نشست نامعتبر است", "unauthorized", 401);
-    if (!sess.userId || sess.userId !== userId) {
-      throw new AppError("این بازی به حساب شما وصل نیست", "forbidden", 403);
-    }
-
-    const state = await this.live.load(sess.roomId);
-    if (!state || !state.game) throw new AppError("بازی پیدا نشد", "not_found", 404);
-    if (state.phase !== "finished") throw new AppError("بازی هنوز تمام نشده است", "bad_phase", 409);
-
-    const gameId = state.settings.gameId ?? "uno";
-    const game = this.gameForRoom(state);
-    if (!game.getPlayerResult) throw new AppError("ثبت نتیجه برای این بازی پشتیبانی نمی‌شود", "unsupported_game", 400);
-
-    const result = game.getPlayerResult(state.game, sess.playerId);
-    if (!result.eligible) {
-      throw new AppError("بازیکن خارج‌شده امتیاز نمی‌گیرد", "not_eligible", 403);
-    }
-
-    state.matchRewardsClaimed ??= {};
-    if (state.matchRewardsClaimed[sess.playerId]) {
-      throw new AppError("امتیاز این بازی قبلاً ثبت شده است", "already_recorded", 409);
-    }
-    state.matchRewardsClaimed[sess.playerId] = true;
-    this.bump(state);
-    await this.persist(state);
-
-    const matchRewards = buildMatchRewards(state);
-    const playerReward = matchRewards.find((reward) => reward.playerId === sess.playerId);
-    const rank = playerReward?.rank ?? (result.won ? 1 : Math.max(2, matchRewards.length));
-    const totalPlayers = matchRewards.length || state.players.length || state.settings.maxPlayers;
-
-    return { won: result.won, gameId, rank, totalPlayers, isPrivate: state.settings.isPrivate };
+  private settleEligibleRewards(roomId: string): Promise<void> {
+    const previous = this.rewardSettlements.get(roomId) ?? Promise.resolve();
+    const task = previous.catch(() => undefined).then(() => this.runEligibleRewardSettlement(roomId));
+    this.rewardSettlements.set(roomId, task);
+    return task.finally(() => {
+      if (this.rewardSettlements.get(roomId) === task) {
+        this.rewardSettlements.delete(roomId);
+      }
+    });
   }
 
-  private async applyBotRewardsIfFinished(state: LiveRoomState): Promise<void> {
-    if (state.phase !== "finished" || !state.game) return;
+  private async runEligibleRewardSettlement(roomId: string): Promise<void> {
+    const state = await this.live.load(roomId);
+    if (!state?.game) return;
     const game = this.gameForRoom(state);
     if (!game.getPlayerResult) return;
 
@@ -962,29 +936,34 @@ export class RoomService {
 
     for (const reward of rewards) {
       const player = state.players.find((p) => p.id === reward.playerId);
-      if (!player?.isBot) continue;
+      if (!player) continue;
       if (state.matchRewardsClaimed[player.id]) continue;
 
-      const botProfileId = player.profile?.id;
-      if (!botProfileId?.startsWith("bot:")) continue;
-      const userId = botProfileId.slice(4);
+      const botProfileId = player.isBot ? player.profile?.id : null;
+      const userId = botProfileId?.startsWith("bot:")
+        ? botProfileId.slice(4)
+        : state.userIdsByPlayerId?.[player.id];
       if (!userId) continue;
-
-      const user = await this.users.findById(userId);
-      if (!user) continue;
 
       const playerResult = game.getPlayerResult(state.game, player.id);
       if (!playerResult.eligible) continue;
 
-      const patch = buildMatchRewardPatch(user, {
-        won: playerResult.won,
-        gameId: state.settings.gameId ?? "uno",
-        rank: reward.rank,
-        totalPlayers,
-        isPrivate: state.settings.isPrivate,
-      } satisfies MatchRewardContext);
-      const updated = await this.users.updateById(userId, patch);
-      if (!updated) continue;
+      try {
+        const user = await this.users.findById(userId);
+        if (!user) continue;
+        const patch = buildMatchRewardPatch(user, {
+          won: playerResult.won,
+          gameId: state.settings.gameId ?? "uno",
+          rank: reward.rank,
+          totalPlayers,
+          isPrivate: state.settings.isPrivate,
+        } satisfies MatchRewardContext);
+        const updated = await this.users.updateById(userId, patch);
+        if (!updated) continue;
+      } catch (error) {
+        console.error("automatic match reward settlement failed", { roomId, playerId: player.id, error });
+        continue;
+      }
 
       state.matchRewardsClaimed[player.id] = true;
       changed = true;
@@ -1026,6 +1005,10 @@ export function clientRoomView(state: LiveRoomState, viewerId: string) {
     matchDurationMs,
     matchDeadlineAt: state.matchDeadlineAt ?? null,
     game: state.game && game ? game.projectStateForPlayer(state.game, viewerId) : null,
+    myResult:
+      state.game && game?.getPlayerResult
+        ? game.getPlayerResult(state.game, viewerId)
+        : null,
     matchRewards: state.phase === "finished" ? buildMatchRewards(state) : [],
   };
 }

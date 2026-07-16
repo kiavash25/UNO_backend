@@ -73,6 +73,7 @@ export function advanceTurn(state: ExplodingKittensGameState, turns = 1): string
   state.turnIndex = nextIndex;
   state.remainingTurns = Math.max(1, turns);
   state.pendingAttackStacks = state.remainingTurns > 1 ? state.remainingTurns : 0;
+  state.playedCardTypesThisTurn = {};
   clearPeekState(state);
   return currentPlayerId(state);
 }
@@ -81,6 +82,7 @@ export function consumeCurrentTurn(state: ExplodingKittensGameState): string | n
   if (state.remainingTurns > 1) {
     state.remainingTurns -= 1;
     state.pendingAttackStacks = state.remainingTurns;
+    state.playedCardTypesThisTurn = {};
     clearPeekState(state);
     return currentPlayerId(state);
   }
@@ -100,7 +102,12 @@ export function markWinnerIfNeeded(state: ExplodingKittensGameState): void {
 }
 
 export function eliminatePlayer(state: ExplodingKittensGameState, playerId: string): void {
+  if (state.eliminatedPlayerIds[playerId]) return;
+
+  const wasCurrentPlayer = state.players[state.turnIndex]?.id === playerId;
   state.eliminatedPlayerIds[playerId] = true;
+  state.eliminationOrder ??= [];
+  state.eliminationOrder.push(playerId);
   delete state.peekByPlayerId[playerId];
   markWinnerIfNeeded(state);
 
@@ -109,8 +116,7 @@ export function eliminatePlayer(state: ExplodingKittensGameState, playerId: stri
     return;
   }
 
-  const currentId = currentPlayerId(state);
-  if (currentId === playerId) {
+  if (wasCurrentPlayer) {
     advanceTurn(state, 1);
   }
 
