@@ -151,6 +151,10 @@ function openNopeWindow(
   actorId: string,
   effect: ExplodingKittensPendingEffect,
 ): boolean {
+  if (!state.enabledCardTypes.includes("nope")) {
+    return false;
+  }
+
   const pending: Extract<ExplodingKittensPendingAction, { type: "nope_window" }> = {
     type: "nope_window",
     effect,
